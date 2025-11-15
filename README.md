@@ -79,8 +79,70 @@
 - `requirements.txt`：Python 依賴套件列表。
 - `photos/`：將用於儲存照片的目錄。
 
+## 擴增功能
+
+您可以透過修改 `main.py` 檔案來輕鬆新增自己的指令區塊與功能。請依照以下步驟操作：
+
+### 步驟 1：新增指令區塊定義
+
+首先，在 `main.py` 檔案頂部的 `COMMAND_ZONES` 列表中新增一個新的指令區塊。每個區塊都是一個包含五個值的元組 (tuple)：
+
+`(x座標, y座標, 寬度, 高度, "指令名稱")`
+
+例如，若要新增一個名為「顯示文字 (Show Text)」的區塊，您可以如下修改 `COMMAND_ZONES`：
+
+```python
+# --- 參數設定 ---
+# ... (其他參數)
+COMMAND_ZONES = [
+    (50, 50, 200, 100, "拍照 (Take Photo)"),
+    (1030, 570, 200, 100, "播放影片 (Play Video)"),
+    (50, 570, 200, 100, "結束程式 (Exit)"),
+    (540, 50, 200, 100, "顯示文字 (Show Text)")  # <-- 新增的指令區塊
+]
+# ...
+```
+> **提示**：您可以先執行程式並進入編輯模式 (`e`鍵)，將現有區塊拖到您想要的位置，然後記下其座標，以幫助您決定新區塊的初始位置。
+
+### 步驟 2：實作區塊對應的功能
+
+接下來，在 `main.py` 的主偵測迴圈中，找到判斷指令名稱的 `if/elif` 結構，並為您的新指令新增一個 `elif` 區塊。
+
+在 `while True:` 迴圈中找到以下程式碼區塊：
+
+```python
+# ...
+if zone_accumulators[i] > TRIGGER_THRESHOLD:
+    print(f"指令觸發: {name}")
+
+    if name == "拍照 (Take Photo)":
+        # ... (拍照的程式碼)
+
+    elif name == "播放影片 (Play Video)":
+        # ... (播放影片的程式碼)
+
+    # 在這裡新增您的程式碼
+    elif name == "顯示文字 (Show Text)":
+        print("這是一個新的自訂功能！")
+        # 在這裡撰寫您想要執行的任何 Python 程式碼
+        # 例如：在畫面上顯示一段文字幾秒鐘
+        cv2.putText(frame, "Hello, Custom Function!", (400, 360), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 3)
+        cv2.imshow("Hand Gesture Interface", frame)
+        cv2.waitKey(2000) # 顯示文字 2 秒
+
+    if name == "結束程式 (Exit)":
+        # ... (結束程式的程式碼)
+    
+    zone_accumulators[i] = 0
+# ...
+```
+
+完成以上兩個步驟後，重新執行 `python main.py`，您就會在畫面上看到新的指令區塊，並且可以透過手勢觸發您自訂的新功能。
+
 ## 最近更新
 
+- **視覺回饋**：觸發指令區塊後，會顯示 5 秒的半透明綠色視覺回饋，提供更直觀的操作確認。
 - **`main.py`**：主應用程式邏輯的通用更新和改進。
 - **`requirements.txt`**：依賴套件已更新。
 - **新媒體**：新增了圖像檔案到 `photos/` 和一個影片檔案 `高清版瑞克搖.mp4`。

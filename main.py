@@ -201,6 +201,7 @@ def main():
 
     print("校準完成，可以開始操作！")
     zone_accumulators = [0] * len(COMMAND_ZONES)
+    feedback_timers = [0] * len(COMMAND_ZONES)
 
     # 階段四：主偵測迴圈
     while True:
@@ -222,6 +223,7 @@ def main():
 
             if zone_accumulators[i] > TRIGGER_THRESHOLD:
                 print(f"指令觸發: {name}")
+                feedback_timers[i] = time.time()
 
                 if name == "拍照 (Take Photo)":
                     output_dir = "photos"
@@ -265,6 +267,22 @@ def main():
                     return
                 
                 zone_accumulators[i] = 0
+        
+        
+        # --- 新增：處理視覺回饋 ---
+        for i, start_time in enumerate(feedback_timers):
+            if start_time > 0:
+                elapsed_time = time.time() - start_time
+                if elapsed_time < 5.0:  # 持續 5 秒
+                    x, y, w, h, _ = COMMAND_ZONES[i]
+                    
+                    # 建立一個半透明的綠色疊加層
+                    overlay = frame.copy()
+                    cv2.rectangle(overlay, (x, y), (x + w, y + h), (0, 255, 0), -1) # 綠色
+                    alpha = 0.4  # 透明度
+                    frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
+                else:
+                    feedback_timers[i] = 0 # 重置計時器
         
         frame = draw_ui(frame, COMMAND_ZONES, zone_accumulators, TRIGGER_THRESHOLD)
 
