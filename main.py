@@ -4,6 +4,12 @@ from PIL import Image, ImageDraw, ImageFont
 import os
 import time
 from datetime import datetime
+import mediapipe as mp # 新增 MediaPipe 導入
+
+# MediaPipe 手部偵測設定
+mp_hands = mp.solutions.hands
+mp_drawing = mp.solutions.drawing_utils
+mp_drawing_styles = mp.solutions.drawing_styles
 
 FONT_PATHS = ["C:/Windows/Fonts/msjh.ttf", "C:/Windows/Fonts/mingliu.ttc", "msjh.ttf"] # You might need to change this to a font available on your system
 FONT_SIZE = 20
@@ -129,7 +135,11 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAP_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAP_HEIGHT)
     
-    backSub = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=VAR_THRESHOLD, detectShadows=False)
+    # 初始化 MediaPipe Hands
+    hands = mp_hands.Hands(
+        model_complexity=1,
+        min_detection_confidence=0.7,
+        min_tracking_confidence=0.7)
 
     # 階段一：等待使用者按下按鍵
     window_name = "Hand Gesture Interface"
@@ -165,40 +175,6 @@ def main():
             # 繼續外層迴圈，等待 's' 或 'q'
 
 
-    # 階段二：給使用者準備的倒數計時
-    start_time = time.time()
-    while time.time() - start_time < GET_READY_SECONDS:
-        ret, frame = cap.read()
-        if not ret: continue
-        
-        frame = cv2.flip(frame, 1)
-        remaining_time = GET_READY_SECONDS - int(time.time() - start_time)
-        cv2.putText(frame, f"Get Ready! Calibration starts in: {remaining_time}", 
-                    (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        
-        frame = draw_ui(frame, COMMAND_ZONES)
-        cv2.imshow("Hand Gesture Interface", frame)
-        cv2.waitKey(1)
-
-    # 階段三：正式校準
-    print(f"即將進行 {CALIBRATION_SECONDS} 秒背景校準，請保持畫面靜止...")
-    start_time = time.time()
-    while time.time() - start_time < CALIBRATION_SECONDS:
-        ret, frame = cap.read()
-        if not ret: continue
-        
-        frame = cv2.flip(frame, 1)
-        remaining_time = CALIBRATION_SECONDS - int(time.time() - start_time)
-        cv2.putText(frame, f"Calibrating... Keep Still: {remaining_time}", 
-                    (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-        
-        frame = draw_ui(frame, COMMAND_ZONES)
-        cv2.imshow("Hand Gesture Interface", frame)
-        cv2.waitKey(1)
-        
-        blur_frame = cv2.GaussianBlur(frame, (5, 5), 0)
-        backSub.apply(blur_frame)
-
     print("校準完成，可以開始操作！")
     zone_accumulators = [0] * len(COMMAND_ZONES)
     feedback_timers = [0] * len(COMMAND_ZONES)
@@ -209,17 +185,56 @@ def main():
         if not ret: break
 
         frame = cv2.flip(frame, 1)
-        blur_frame = cv2.GaussianBlur(frame, (5, 5), 0)
-        fg_mask = backSub.apply(blur_frame)
-        fg_mask = cv2.erode(fg_mask, None, iterations=2)
-        fg_mask = cv2.dilate(fg_mask, None, iterations=2)
+        
+        # 將 BGR 圖像轉換為 RGB
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # 處理圖像以偵測手部
+        results = hands.process(frame_rgb)
+
+        # 繪製手部關鍵點
+        if results.multi_hand_landmarks:
+            for hand_landmarks in results.multi_hand_landmarks:
+                mp_drawing.draw_landmarks(
+                    frame,
+                    hand_landmarks,
+                    mp_hands.HAND_CONNECTIONS,
+                    mp_drawing_styles.get_default_hand_landmarks_style(),
+                    mp_drawing_styles.get_default_hand_connections_style())
+
+        # --- 新增：處理視覺回饋 ---
+        for i, start_time in enumerate(feedback_timers):
+            if start_time > 0:
+                elapsed_time = time.time() - start_time
+                if elapsed_time < 5.0:  # 持續 5 秒
+                    x, y, w, h, _ = COMMAND_ZONES[i]
+                    
+                    # 建立一個半透明的綠色疊加層
+                    overlay = frame.copy()
+                    cv2.rectangle(overlay, (x, y), (x + w, y + h), (0, 255, 0), -1) # 綠色
+                    alpha = 0.4  # 透明度
+                    frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
+                else:
+                    feedback_timers[i] = 0 # 重置計時器
 
         for i, (x, y, w, h, name) in enumerate(COMMAND_ZONES):
-            roi_mask = fg_mask[y:y+h, x:x+w]
-            motion_detected = cv2.countNonZero(roi_mask)
+            # 檢查是否有手部關鍵點在當前區域內
+            hand_in_zone = False
+            if results.multi_hand_landmarks:
+                for hand_landmarks in results.multi_hand_landmarks:
+                    # 改用中指根部關節 (MIDDLE_FINGER_MCP)，作為更穩定的判斷點
+                    target_landmark = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_MCP]
+                    h_frame, w_frame, c = frame.shape
+                    cx, cy = int(target_landmark.x * w_frame), int(target_landmark.y * h_frame)
 
-            if motion_detected > (w * h * 0.1): zone_accumulators[i] += ACCUMULATION_RATE
-            else: zone_accumulators[i] = max(0, zone_accumulators[i] - DECAY_RATE)
+                    if x <= cx < x + w and y <= cy < y + h:
+                        hand_in_zone = True
+                        break # 只要有一個手部關鍵點在區域內就足夠
+
+            if hand_in_zone:
+                zone_accumulators[i] += ACCUMULATION_RATE
+            else:
+                zone_accumulators[i] = max(0, zone_accumulators[i] - DECAY_RATE)
 
             if zone_accumulators[i] > TRIGGER_THRESHOLD:
                 print(f"指令觸發: {name}")
@@ -245,7 +260,7 @@ def main():
                             print(f"正在播放影片: {video_path}")
                             # 隱藏主視窗，避免影片播放時干擾
                             cv2.destroyWindow("Hand Gesture Interface")
-                            cv2.destroyWindow("Foreground Mask")
+                            # cv2.destroyWindow("Foreground Mask") # 移除此行
 
                             while True:
                                 ret_video, frame_video = player.read()
@@ -259,7 +274,7 @@ def main():
                             print("影片播放結束。")
                             # 重新顯示主視窗
                             cv2.namedWindow("Hand Gesture Interface")
-                            cv2.namedWindow("Foreground Mask")
+                            # cv2.namedWindow("Foreground Mask") # 移除此行
 
                 if name == "結束程式 (Exit)":
                     cap.release()
@@ -268,31 +283,16 @@ def main():
                 
                 zone_accumulators[i] = 0
         
-        
-        # --- 新增：處理視覺回饋 ---
-        for i, start_time in enumerate(feedback_timers):
-            if start_time > 0:
-                elapsed_time = time.time() - start_time
-                if elapsed_time < 5.0:  # 持續 5 秒
-                    x, y, w, h, _ = COMMAND_ZONES[i]
-                    
-                    # 建立一個半透明的綠色疊加層
-                    overlay = frame.copy()
-                    cv2.rectangle(overlay, (x, y), (x + w, y + h), (0, 255, 0), -1) # 綠色
-                    alpha = 0.4  # 透明度
-                    frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
-                else:
-                    feedback_timers[i] = 0 # 重置計時器
-        
         frame = draw_ui(frame, COMMAND_ZONES, zone_accumulators, TRIGGER_THRESHOLD)
 
         cv2.imshow("Hand Gesture Interface", frame)
-        cv2.imshow("Foreground Mask", fg_mask) 
+        # cv2.imshow("Foreground Mask", fg_mask) # 移除此行
 
         if cv2.waitKey(1) & 0xFF == ord('q'): break
 
     cap.release()
     cv2.destroyAllWindows()
+    hands.close() # 關閉 MediaPipe Hands 資源
     print("程式已結束。")
 
 if __name__ == '__main__':
