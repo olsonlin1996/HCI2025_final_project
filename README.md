@@ -1,147 +1,88 @@
-# 手勢控制介面
+"""執行需求"""
 
-一個使用 Python 和 OpenCV 建立的即時手勢辨識系統。此介面允許使用者透過在可自訂的螢幕區域上移動手部來觸發指令。
+先執行pip install -r requirements.txt
+程式開啟後觸發右下開始區塊，會進入windows音效區域: 上方5個區塊會播放do,re,mi,fa,so的windows beep聲。右下鋼琴區塊和左下小提琴區塊以此類推。
+-----------------------------------------------------------------------------
+"""資料夾解析"""
 
-## 功能特色
+piano_sound: 存放鋼琴 do,re,mi,fa,so 的wav檔。
+violin_sound: 存放小提琴 do,re,mi,fa,so 的wav檔。
+他們上方區塊被觸發就是撥放對應wav檔。
+------------------------------------------------------------------------------
+"""codex log"""
 
-- **即時手部偵測**：使用 MediaPipe 框架精確追蹤手部關鍵點（以中指根部關節為主要判斷點），提供更準確的互動體驗。
-- **互動式使用者介面**：直接在攝影機畫面中顯示指令區域和視覺回饋。
-- **動態佈局編輯**：按下 'e' 鍵進入拖放介面，即時移動和重新定位指令框。
-- **多攝影機支援**：自動偵測可用的攝影機並允許使用者選擇要使用的攝影機。
-- **照片儲存**：一個「拍照」指令，將當前畫面以時間戳記儲存到本地 `photos/` 目錄。
-- **使用者友善的校準**：一個簡單的、透過按鍵啟動的過程，用於校準背景以實現準確的運動偵測。
+1.
+已為上方五個區塊加入音效觸發（do、re、mi、so、la）：
 
-## 系統要求
+在 main.py 引入 winsound，新增 TOP_ACTION_SOUNDS 對應各區塊到頻率，TOP_ACTION_DURATION_MS 控制音長。
+新增 play_action_sound，在觸發 功能一~功能五 時呼叫 winsound.Beep 撥放音效。
+檔案：main.py
 
-- Python 3.x
-- 網路攝影機
-- `requirements.txt` 中列出的套件
+如需改音色/音長，可調整 TOP_ACTION_SOUNDS 內的頻率或 TOP_ACTION_DURATION_MS
 
-## 繁體中文顯示的字體要求
+2.
+已將上方五個區塊的讀條參數獨立，並告知位置：
 
-本應用程式使用繁體中文字元作為其使用者介面。為確保正確顯示，系統會依序嘗試從以下路徑載入字體檔案：
+新增常數：TOP_TRIGGER_THRESHOLD、TOP_ACCUMULATION_RATE、TOP_DECAY_RATE（上方區塊專用），原本的 TRIGGER_THRESHOLD、ACCUMULATION_RATE、DECAY_RATE 只管其他區塊。
+新增 helper：get_zone_params 依區塊名稱取回各自的讀條參數；build_zone_thresholds 生成與區塊對齊的門檻列表。
+draw_ui 現在支援每個區塊自己的 threshold（傳入列表）；主迴圈使用每區塊獨立的累加/衰減/觸發邏輯。
+相關程式碼位置：main.py 頂部參數區、get_zone_params/build_zone_thresholds 定義區，以及主偵測迴圈的累積/判斷邏輯與 draw_ui 呼叫。
+目前預設兩組參數數值相同；要調快/慢上方讀條，請調整 TOP_TRIGGER_THRESHOLD、TOP_ACCUMULATION_RATE、TOP_DECAY_RATE。
 
-1.  `C:/Windows/Fonts/msjh.ttf` (微軟正黑體)
-2.  `C:/Windows/Fonts/mingliu.ttc` (細明體)
-3.  `msjh.ttf` (來自專案目錄)
+3.
+已調整右下觸發行為：當右下（顯示/收起）區塊被觸發後，底部兩個區塊會改成「小提琴」「鋼琴」（功能暫留空）。同時會自動顯示上方五個區塊（若尚未展開）。
 
-如果這些字體都找不到，應用程式將會回退到預設系統字體，這可能無法正確顯示繁體中文字元。
+修改重點（main.py）：
 
-**字體問題疑難排解：**
--   **字體缺失**：如果繁體中文字元顯示不正確，請確保您的 `C:/Windows/Fonts` 目錄中安裝了 `msjh.ttf` 或 `mingliu.ttc`。這些是標準的 Windows 字體。
--   **自訂字體**：您可以將相容的 `.ttf` 或 `.ttc` 字體檔案直接放置在專案的根目錄中，並將其命名為 `msjh.ttf`，以便應用程式使用。
+新增常數 PIANO_LABEL / VIOLIN_LABEL。
+新增 helper build_instrument_bottom_zones、swap_bottom_to_instruments（約在參數區下方），將底部控制區換成鋼琴/小提琴。
+主偵測迴圈中判斷觸發時：
+遇到 SHOW_MENU_LABEL/HIDE_MENU_LABEL 時設定 instrument_swap_requested。
+在觸發後（exit 判斷後）若 instrument_swap_requested 為真，會先確保上方五區塊顯示，接著呼叫 swap_bottom_to_instruments，並重建累積/門檻資料。位置約在主迴圈的觸發處理後、繪圖前。
 
-## 設定與安裝
+4.
+已更新：右下「鋼琴」觸發後，上方五個區塊會改為鋼琴音階的 do、re、mi、fa、so，並播放對應音效。
 
-1.  **複製儲存庫 (或下載檔案)。**
+實作重點（main.py）：
 
-2.  **安裝所需的 Python 套件：**
-    在專案目錄中開啟終端機或命令提示字元並執行：
-    ```bash
-    pip install -r requirements.txt
-    ```
+新增 TOP_ACTION_NAMES_PIANO = ["鋼琴 do", ... "鋼琴 so"] 並將音效映射加入 TOP_ACTION_SOUNDS。
+將上方區塊名稱集合改為可切換：TOP_ACTION_NAMES_DEFAULT、TOP_ACTION_NAMES_PIANO、TOP_ACTION_ALL。
+build_top_zones 支援傳入名稱列表；toggle_menu_visibility、get_zone_params 等都改用 TOP_ACTION_ALL。
+主迴圈中：觸發右下 鋼琴 時，設置 piano_top_requested，並在後續步驟將上方區塊替換為鋼琴音階區塊（若未展開會先展開），重建區域與讀條參數。
+音效播放對應新名稱，保持 do/re/mi/fa/so。
 
-## 如何使用
+5.
+已改為播放實際鋼琴 wav 檔：
 
-1.  **執行主程式：**
-    ```bash
-    python main.py
-    ```
+新增使用 simpleaudio，從 piano_sound/ 載入 c1.wav、d1.wav、e1.wav、f1.wav、g1.wav 對應 do/re/mi/fa/so，套用在原有五區塊與鋼琴模式。
+play_action_sound 改為以檔名查找、組合路徑並播放 wave，缺檔或播放失敗會列印訊息。
+requirements.txt 加入 simpleaudio。
+檔案：main.py、requirements.txt。若尚未安裝，請執行 pip install -r requirements.txt。
 
-2.  **初始選單：**
-    - 將會出現一個視窗，顯示您的網路攝影機畫面和選單。
-    - **按下 's'**：直接進入手勢偵測模式。
-    - **按下 'e'**：進入 **編輯模式**。
-    - **按下 'q'**：退出程式。
+6.
+已調整：
 
-3.  **編輯模式 (可選)：**
-    - 如果您按下 'e'，現在可以自訂佈局。
-    - **拖放**：使用滑鼠點擊並拖曳指令框到您想要的位置。
-    - **按下 's'**：儲存新佈局並返回初始選單。
+右下（顯示/收起）觸發時會播放 Windows 嗶聲（winsound），並且再切換底部為鋼琴/小提琴。
+上方區塊：初始使用系統嗶聲（winsound.Beep）播放 do/re/mi/fa/so；當右下鋼琴被觸發後，上方區塊改為鋼琴音階並播放 piano_sound/ 中的 wav 檔。
+新增嗶聲/實音的分流邏輯：TOP_ACTION_FREQS（預設嗶聲）、TOP_ACTION_SOUNDS（鋼琴 wav），play_action_sound 依名稱挑選 winsound 或 simpleaudio。
+切換行為會額外嗶一聲提示。
 
-4.  **互動：**
-    - 進入手勢偵測模式後，將手移到指令框上方以開始啟動它。
-    - 進度條將會填滿。保持手部穩定直到填滿，以觸發指令。
-    - **拍照**：如果觸發，當前圖像將儲存到 `photos/` 資料夾中。
+7.
+已調整：
 
-5.  **退出程式：**
-    - 您可以在主偵測迴圈中的任何時候，透過手勢觸發「退出」指令或按下 **'q'** 鍵來退出程式。
+新增小提琴音階名稱與音檔：TOP_ACTION_NAMES_VIOLIN 及 violin_sound 下的 c3/d3/e3/f3/g3。
+TOP_ACTION_ALL 含預設、鋼琴、小提琴三組名稱；音效表 TOP_ACTION_SOUNDS 改存 (資料夾, 檔名)，小提琴對應 violin_sound。
+play_action_sound：預設名稱走 winsound 嗶聲，鋼琴/小提琴名稱改播放對應 wav。
+主迴圈：觸發左下「小提琴」會將上方五區塊切換成小提琴 do/re/mi/fa/so，並用小提琴音檔播放；鋼琴行為保持。
+仍保留右下切換時的系統嗶聲提示。
+檔案：main.py（已通過 python -m py_compile main.py）。
 
-## 檔案結構
+8.
+完成音效切換邏輯：
 
-- `main.py`：主應用程式腳本。
-- `edit_layout.py`：包含互動式佈局編輯器功能的模組。
-- `requirements.txt`：Python 依賴套件列表。
-- `photos/`：將用於儲存照片的目錄。
-
-## 擴增功能
-
-您可以透過修改 `main.py` 檔案來輕鬆新增自己的指令區塊與功能。請依照以下步驟操作：
-
-> **重要提示**：目前指令的觸發是基於 MediaPipe 偵測到的手部關鍵點（預設為**中指根部關節**）是否進入指令區塊。因此，新增功能時請考慮這種互動方式。
-
-### 步驟 1：新增指令區塊定義
-
-首先，在 `main.py` 檔案頂部的 `COMMAND_ZONES` 列表中新增一個新的指令區塊。每個區塊都是一個包含五個值的元組 (tuple)：
-
-`(x座標, y座標, 寬度, 高度, "指令名稱")`
-
-例如，若要新增一個名為「顯示文字 (Show Text)」的區塊，您可以如下修改 `COMMAND_ZONES`：
-
-```python
-# --- 參數設定 ---
-# ... (其他參數)
-COMMAND_ZONES = [
-    (50, 50, 200, 100, "拍照 (Take Photo)"),
-    (1030, 570, 200, 100, "播放影片 (Play Video)"),
-    (50, 570, 200, 100, "結束程式 (Exit)"),
-    (540, 50, 200, 100, "顯示文字 (Show Text)")  # <-- 新增的指令區塊
-]
-# ...
-```
-> **提示**：您可以先執行程式並進入編輯模式 (`e`鍵)，將現有區塊拖到您想要的位置，然後記下其座標，以幫助您決定新區塊的初始位置。
-
-### 步驟 2：實作區塊對應的功能
-
-接下來，在 `main.py` 的主偵測迴圈中，找到判斷指令名稱的 `if/elif` 結構，並為您的新指令新增一個 `elif` 區塊。
-
-在 `while True:` 迴圈中找到以下程式碼區塊：
-
-```python
-# ...
-if zone_accumulators[i] > TRIGGER_THRESHOLD:
-    print(f"指令觸發: {name}")
-
-    if name == "拍照 (Take Photo)":
-        # ... (拍照的程式碼)
-
-    elif name == "播放影片 (Play Video)":
-        # ... (播放影片的程式碼)
-
-    # 在這裡新增您的程式碼
-    elif name == "顯示文字 (Show Text)":
-        print("這是一個新的自訂功能！")
-        # 在這裡撰寫您想要執行的任何 Python 程式碼
-        # 例如：在畫面上顯示一段文字幾秒鐘
-        cv2.putText(frame, "Hello, Custom Function!", (400, 360), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 3)
-        cv2.imshow("Hand Gesture Interface", frame)
-        cv2.waitKey(2000) # 顯示文字 2 秒
-
-    if name == "結束程式 (Exit)":
-        # ... (結束程式的程式碼)
-    
-    zone_accumulators[i] = 0
-# ...
-```
-
-完成以上兩個步驟後，重新執行 `python main.py`，您就會在畫面上看到新的指令區塊，並且可以透過手勢觸發您自訂的新功能。
-
-## 最近更新
-
-- **移除校準步驟與提升偵測精準度**：由於引入 MediaPipe，移除了不必要的校準步驟，並透過調整手部關鍵點判斷，顯著提升了指令觸發的精準度。
-- **手部偵測功能**：引入 MediaPipe 實現更精確的手部偵測，取代原有的背景減除法。
-- **視覺回饋**：觸發指令區塊後，會顯示 5 秒的半透明綠色視覺回饋，提供更直觀的操作確認。
-- **`main.py`**：主應用程式邏輯的通用更新和改進。
-- **`requirements.txt`**：依賴套件已更新。
-- **新媒體**：新增了圖像檔案到 `photos/` 和一個影片檔案 `高清版瑞克搖.mp4`。
+新增 WINDOWS_LABEL、TOP_ACTION_NAMES_WINDOWS，並將 Windows 五音加入讀條名單與嗶聲頻率。
+右下鋼琴/左下小提琴觸發後：該區塊會改成 Windows，並記錄來源樂器。
+觸發 Windows 區塊：上方五區塊切換為 Windows 嗶聲版 do/re/mi/fa/so，同時將該區塊改回原本的鋼琴或小提琴。
+觸發鋼琴/小提琴/Windows 上方區塊時，會播放對應的鋼琴/小提琴 wav 或 Windows 嗶聲。
+切換底部為樂器時會清空先前的來源記錄，避免混亂。
+檔案：main.py（已通過 python -m py_compile main.py）。
