@@ -42,9 +42,50 @@ TOP_ACTION_NAMES_DEFAULT = ["do", "re", "mi", "fa", "so"]
 TOP_ACTION_NAMES_PIANO = ["鋼琴 do", "鋼琴 re", "鋼琴 mi", "鋼琴 fa", "鋼琴 so"]
 TOP_ACTION_NAMES_VIOLIN = ["小提琴 do", "小提琴 re", "小提琴 mi", "小提琴 fa", "小提琴 so"]
 TOP_ACTION_NAMES_WINDOWS = ["Windows do", "Windows re", "Windows mi", "Windows fa", "Windows so"]
-TOP_ACTION_ALL = TOP_ACTION_NAMES_DEFAULT + TOP_ACTION_NAMES_PIANO + TOP_ACTION_NAMES_VIOLIN + TOP_ACTION_NAMES_WINDOWS
+TOP_ACTION_NAMES_CHINESE = ["中國 宮", "中國 商", "中國 角", "中國 徵", "中國 羽"]
+TOP_ACTION_NAMES_RITSU = ["律 一越", "律 斷金", "律 平調", "律 勝絹", "律 神仙"]
+TOP_ACTION_NAMES_RYO = ["呂 黃鐘", "呂 太食", "呂 夾鐘", "呂 仲呂", "呂 無射"]
+TOP_ACTION_ALL = (
+    TOP_ACTION_NAMES_DEFAULT
+    + TOP_ACTION_NAMES_PIANO
+    + TOP_ACTION_NAMES_VIOLIN
+    + TOP_ACTION_NAMES_WINDOWS
+    + TOP_ACTION_NAMES_CHINESE
+    + TOP_ACTION_NAMES_RITSU
+    + TOP_ACTION_NAMES_RYO
+)
 PIANO_SOUND_DIR = "piano_sound"
 VIOLIN_SOUND_DIR = "violin_sound"
+HANDPAN_SOUND_DIR = "handpan_sound"
+MARIMBA_SOUND_DIR = "marimba_sound"
+BELL_SOUND_DIR = "bell_sound"
+CHINESE_SOUND_DIR = "chinese_pentatonic_sound"
+RITSU_SOUND_DIR = "japanese_ritsu_sound"
+RYO_SOUND_DIR = "japanese_ryo_sound"
+NOTE_FILENAMES = {
+    "do": "c1.wav",
+    "re": "d1.wav",
+    "mi": "e1.wav",
+    "fa": "f1.wav",
+    "so": "g1.wav",
+    "la": "a1.wav",
+    "ti": "b1.wav",
+    "gong": "c1.wav",
+    "shang": "d1.wav",
+    "jue": "e1.wav",
+    "zhi": "g1.wav",
+    "yu": "a1.wav",
+    "ritsu1": "d1.wav",
+    "ritsu2": "e1.wav",
+    "ritsu3": "g1.wav",
+    "ritsu4": "a1.wav",
+    "ritsu5": "b1.wav",
+    "ryo1": "c1.wav",
+    "ryo2": "d1.wav",
+    "ryo3": "f1.wav",
+    "ryo4": "g1.wav",
+    "ryo5": "a1.wav",
+}
 TOP_ACTION_FREQS = {
     "do": 262,
     "re": 294,
@@ -57,18 +98,74 @@ TOP_ACTION_FREQS = {
     "Windows fa": 349,
     "Windows so": 392,
 }
-TOP_ACTION_SOUNDS = {
-    "鋼琴 do": (PIANO_SOUND_DIR, "c1.wav"),
-    "鋼琴 re": (PIANO_SOUND_DIR, "d1.wav"),
-    "鋼琴 mi": (PIANO_SOUND_DIR, "e1.wav"),
-    "鋼琴 fa": (PIANO_SOUND_DIR, "f1.wav"),
-    "鋼琴 so": (PIANO_SOUND_DIR, "g1.wav"),
-    "小提琴 do": (VIOLIN_SOUND_DIR, "c3.wav"),
-    "小提琴 re": (VIOLIN_SOUND_DIR, "d3.wav"),
-    "小提琴 mi": (VIOLIN_SOUND_DIR, "e3.wav"),
-    "小提琴 fa": (VIOLIN_SOUND_DIR, "f3.wav"),
-    "小提琴 so": (VIOLIN_SOUND_DIR, "g3.wav"),
-}
+SCALE_PRESETS = [
+    {
+        "key": "default",
+        "label": "預設嗶聲",
+        "names": TOP_ACTION_NAMES_DEFAULT,
+        "note_keys": ["do", "re", "mi", "fa", "so"],
+        "sound_dir": None,
+        "use_beep": True,
+    },
+    {
+        "key": "piano",
+        "label": "鋼琴五聲",
+        "names": TOP_ACTION_NAMES_PIANO,
+        "note_keys": ["do", "re", "mi", "fa", "so"],
+        "sound_dir": PIANO_SOUND_DIR,
+        "use_beep": False,
+    },
+    {
+        "key": "violin",
+        "label": "小提琴五聲",
+        "names": TOP_ACTION_NAMES_VIOLIN,
+        "note_keys": ["do", "re", "mi", "fa", "so"],
+        "sound_dir": VIOLIN_SOUND_DIR,
+        "use_beep": False,
+    },
+    {
+        "key": "windows",
+        "label": "Windows 嗶聲",
+        "names": TOP_ACTION_NAMES_WINDOWS,
+        "note_keys": ["do", "re", "mi", "fa", "so"],
+        "sound_dir": None,
+        "use_beep": True,
+    },
+    {
+        "key": "chinese",
+        "label": "中國五聲",
+        "names": TOP_ACTION_NAMES_CHINESE,
+        "note_keys": ["gong", "shang", "jue", "zhi", "yu"],
+        "sound_dir": CHINESE_SOUND_DIR,
+        "use_beep": False,
+    },
+    {
+        "key": "ritsu",
+        "label": "日本律音階",
+        "names": TOP_ACTION_NAMES_RITSU,
+        "note_keys": ["ritsu1", "ritsu2", "ritsu3", "ritsu4", "ritsu5"],
+        "sound_dir": RITSU_SOUND_DIR,
+        "use_beep": False,
+    },
+    {
+        "key": "ryo",
+        "label": "日本呂音階",
+        "names": TOP_ACTION_NAMES_RYO,
+        "note_keys": ["ryo1", "ryo2", "ryo3", "ryo4", "ryo5"],
+        "sound_dir": RYO_SOUND_DIR,
+        "use_beep": False,
+    },
+]
+TIMBRE_LAYERS = [
+    {"key": "handpan", "label": "Handpan", "dir": HANDPAN_SOUND_DIR},
+    {"key": "marimba", "label": "Marimba", "dir": MARIMBA_SOUND_DIR},
+    {"key": "bell", "label": "Bell", "dir": BELL_SOUND_DIR},
+]
+TIMBRE_MODES = ["單一音色", "水平漸層"]
+SCALE_CYCLE_LABEL = "切換音階"
+TIMBRE_MODE_LABEL = "音色模式"
+ACTION_NOTE_KEYS = {}
+TOP_ACTION_SOUNDS = {}
 TOP_ZONE_WIDTH = 200
 TOP_ZONE_HEIGHT = 100
 TOP_ZONE_START_Y = 0  # 貼齊上緣
@@ -102,6 +199,20 @@ def ensure_toggle_label(zones, menu_visible):
     return updated
 
 
+def register_scale_sounds():
+    """Populate TOP_ACTION_SOUNDS and ACTION_NOTE_KEYS based on presets."""
+    TOP_ACTION_SOUNDS.clear()
+    ACTION_NOTE_KEYS.clear()
+
+    for preset in SCALE_PRESETS:
+        for display_name, note_key in zip(preset["names"], preset["note_keys"]):
+            ACTION_NOTE_KEYS[display_name] = note_key
+            if preset["sound_dir"]:
+                filename = NOTE_FILENAMES.get(note_key)
+                if filename:
+                    TOP_ACTION_SOUNDS[display_name] = (preset["sound_dir"], filename)
+
+
 def toggle_menu_visibility(menu_visible, zones, top_zone_cache, top_names):
     """
     Toggle whether the top action row is visible. Keeps any edited positions for the
@@ -128,9 +239,12 @@ def toggle_menu_visibility(menu_visible, zones, top_zone_cache, top_names):
 
 BASE_ZONES = [
     (50, 570, 200, 100, EXIT_LABEL),
+    (300, 570, 200, 100, SCALE_CYCLE_LABEL),
+    (550, 570, 200, 100, TIMBRE_MODE_LABEL),
     (1030, 570, 200, 100, SHOW_MENU_LABEL),
 ]
 COMMAND_ZONES = ensure_toggle_label(BASE_ZONES.copy(), menu_visible=False)
+register_scale_sounds()
 
 
 def compute_velocity_factor(velocity: float):
@@ -150,8 +264,8 @@ def velocity_to_color(velocity: float):
     return tuple(int(c) for c in blended)
 
 
-def load_scaled_wave(path: str, velocity: float):
-    """Load a wave file and return a WaveObject scaled by velocity."""
+def load_wave_data(path: str):
+    """Load raw wave data for blending."""
     if not os.path.exists(path):
         print(f"找不到音檔：{path}")
         return None
@@ -166,21 +280,92 @@ def load_scaled_wave(path: str, velocity: float):
         print(f"讀取音檔失敗：{e}")
         return None
 
-    audio_data = np.frombuffer(frames, dtype=np.int16)
+    if sample_width != 2:
+        print(f"不支援的位寬：{sample_width}，預期 16-bit wav")
+        return None
 
+    audio_data = np.frombuffer(frames, dtype=np.int16)
+    return sample_rate, num_channels, sample_width, audio_data
+
+
+def load_scaled_wave(path: str, velocity: float):
+    """Load a wave file and return a WaveObject scaled by velocity."""
+    wave_data = load_wave_data(path)
+    if not wave_data:
+        return None
+
+    sample_rate, num_channels, sample_width, audio_data = wave_data
     velocity_factor = compute_velocity_factor(velocity)
     gain = 0.4 + 0.6 * velocity_factor
     pitch_factor = 1.0 + 0.25 * velocity_factor
 
-    # Apply gain with clipping protection
     scaled = np.clip(audio_data * gain, -32768, 32767).astype(np.int16)
-    # Adjust playback rate to subtly pitch-shift according to movement speed
     adjusted_sample_rate = int(sample_rate * pitch_factor)
 
     return sa.WaveObject(scaled.tobytes(), num_channels, sample_width, adjusted_sample_rate)
 
 
-def play_action_sound(action_name: str, velocity: float):
+def normalize_hand_x(hand_x: float):
+    if hand_x is None:
+        return 0.5
+    return max(0.0, min(hand_x / CAP_WIDTH, 1.0))
+
+
+def build_blended_wave(note_key: str, velocity: float, hand_x: float):
+    """Blend multiple layers according to horizontal position."""
+    layer_count = len(TIMBRE_LAYERS)
+    if layer_count == 0:
+        return None
+
+    normalized_x = normalize_hand_x(hand_x)
+    segment = normalized_x * (layer_count - 1)
+    base_idx = int(math.floor(segment))
+    next_idx = min(base_idx + 1, layer_count - 1)
+    mix = segment - base_idx
+
+    base_info = TIMBRE_LAYERS[base_idx]
+    next_info = TIMBRE_LAYERS[next_idx]
+    base_gain = 1.0 - mix
+    next_gain = mix
+
+    def scaled_layer(layer_info, gain):
+        filename = NOTE_FILENAMES.get(note_key)
+        if not filename:
+            return None
+        wave_data = load_wave_data(os.path.join(layer_info["dir"], filename))
+        if not wave_data:
+            return None
+        sr, ch, sw, audio = wave_data
+        velocity_factor = compute_velocity_factor(velocity)
+        gain_scale = (0.3 + 0.7 * velocity_factor) * gain
+        adjusted = np.clip(audio * gain_scale, -32768, 32767).astype(np.int16)
+        return sr, ch, sw, adjusted
+
+    base_wave = scaled_layer(base_info, base_gain)
+    next_wave = scaled_layer(next_info, next_gain)
+
+    if not base_wave and not next_wave:
+        return None
+    chosen = base_wave or next_wave
+    sample_rate, num_channels, sample_width, audio_data = chosen
+    blended = np.zeros_like(audio_data)
+
+    for data in (base_wave, next_wave):
+        if not data:
+            continue
+        _, _, _, audio = data
+        if len(audio) < len(blended):
+            audio = np.pad(audio, (0, len(blended) - len(audio)))
+        blended[: len(audio)] = np.clip(
+            blended[: len(audio)] + audio[: len(blended)], -32768, 32767
+        )
+
+    pitch_factor = 1.0 + 0.25 * compute_velocity_factor(velocity)
+    adjusted_sample_rate = int(sample_rate * pitch_factor)
+    return sa.WaveObject(blended.tobytes(), num_channels, sample_width, adjusted_sample_rate)
+
+
+def play_action_sound(action_name: str, velocity: float, hand_x: float, timbre_mode: str):
     """Play the mapped tone for the given top action if available."""
     if action_name in TOP_ACTION_FREQS:
         base_freq = TOP_ACTION_FREQS[action_name]
@@ -193,12 +378,17 @@ def play_action_sound(action_name: str, velocity: float):
         return
 
     sound_info = TOP_ACTION_SOUNDS.get(action_name)
-    if not sound_info:
-        return
-    sound_dir, filename = sound_info
-    path = os.path.join(sound_dir, filename)
+    note_key = ACTION_NOTE_KEYS.get(action_name)
+    if timbre_mode == TIMBRE_MODES[1] and note_key:
+        wave_obj = build_blended_wave(note_key, velocity, hand_x)
+    else:
+        wave_obj = None
 
-    wave_obj = load_scaled_wave(path, velocity)
+    if not wave_obj and sound_info:
+        sound_dir, filename = sound_info
+        path = os.path.join(sound_dir, filename)
+        wave_obj = load_scaled_wave(path, velocity)
+
     if wave_obj is None:
         return
     try:
@@ -230,20 +420,55 @@ def build_zone_thresholds(zones):
     return thresholds
 
 
+def get_preset_by_key(key: str):
+    for idx, preset in enumerate(SCALE_PRESETS):
+        if preset["key"] == key:
+            return idx, preset
+    return 0, SCALE_PRESETS[0]
+
+
+def rebuild_top_for_preset(
+    preset_idx: int,
+    menu_visible: bool,
+    zones: list,
+):
+    """Replace the top row with the specified preset and rebuild caches."""
+    preset = SCALE_PRESETS[preset_idx]
+    zones_without_top = [z for z in zones if z[4] not in TOP_ACTION_ALL]
+    top_zone_cache = build_top_zones(preset["names"])
+
+    if menu_visible:
+        zones = zones_without_top + top_zone_cache
+    else:
+        zones = zones_without_top
+
+    zones = ensure_toggle_label(zones, menu_visible)
+    zone_accumulators = [0] * len(zones)
+    feedback_timers = [0] * len(zones)
+    zone_thresholds = build_zone_thresholds(zones)
+    return (
+        preset["names"],
+        top_zone_cache,
+        zones,
+        zone_accumulators,
+        feedback_timers,
+        zone_thresholds,
+    )
+
+
 def build_instrument_bottom_zones():
-    """Create piano/violin zones at the original bottom positions."""
-    violin_zone = (BASE_ZONES[0][0], BASE_ZONES[0][1], BASE_ZONES[0][2], BASE_ZONES[0][3], VIOLIN_LABEL)
-    piano_zone = (BASE_ZONES[1][0], BASE_ZONES[1][1], BASE_ZONES[1][2], BASE_ZONES[1][3], PIANO_LABEL)
+    """Create piano/violin zones at reserved bottom positions."""
+    violin_zone = (50, 460, 200, 100, VIOLIN_LABEL)
+    piano_zone = (1030, 460, 200, 100, PIANO_LABEL)
     return [violin_zone, piano_zone]
 
 
 def swap_bottom_to_instruments(zones):
-    """Replace bottom control zones with piano/violin once triggered."""
-    # Avoid duplicate swap
+    """Ensure piano/violin selectors are present without removing controls."""
     if any(z[4] == PIANO_LABEL for z in zones) and any(z[4] == VIOLIN_LABEL for z in zones):
         return zones
 
-    kept = [z for z in zones if z[4] not in (EXIT_LABEL, SHOW_MENU_LABEL, HIDE_MENU_LABEL)]
+    kept = [z for z in zones if z[4] not in (PIANO_LABEL, VIOLIN_LABEL)]
     return kept + build_instrument_bottom_zones()
 GET_READY_SECONDS = 3    # 按下按鍵後的準備時間
 CALIBRATION_SECONDS = 3  # 正式校準時間
@@ -359,7 +584,9 @@ def main():
 
     # 介面狀態：預設隱藏上方五個功能區塊
     menu_visible = False
-    current_top_names = TOP_ACTION_NAMES_DEFAULT
+    current_scale_idx, current_preset = get_preset_by_key("default")
+    current_timbre_idx = 0
+    current_top_names = current_preset["names"]
     top_zone_cache = build_top_zones(current_top_names)
     COMMAND_ZONES = ensure_toggle_label(BASE_ZONES.copy(), menu_visible)
     zone_thresholds = build_zone_thresholds(COMMAND_ZONES)
@@ -479,6 +706,8 @@ def main():
         piano_top_requested = False
         violin_top_requested = False
         windows_top_requested = False
+        scale_cycle_requested = False
+        timbre_cycle_requested = False
         exit_requested = False
         toggle_beep_requested = False
         zone_velocities = [0.0] * len(COMMAND_ZONES)
@@ -487,6 +716,7 @@ def main():
             # 檢查是否有手部關鍵點在當前區域內
             hand_in_zone = False
             zone_velocity = 0.0
+            last_hand_x = None
             if hand_data:
                 for hand_landmarks, hand_label, hand_velocity in hand_data:
                     target_landmark = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_MCP]
@@ -495,6 +725,7 @@ def main():
                     if x <= cx < x + w and y <= cy < y + h:
                         hand_in_zone = True
                         zone_velocity = max(zone_velocity, hand_velocity)
+                        last_hand_x = cx
 
             acc_rate, decay_rate, zone_threshold = get_zone_params(name)
 
@@ -528,8 +759,18 @@ def main():
                     COMMAND_ZONES[i] = (x, y, w, h, original)
                     window_origin.pop(i, None)
                     zones_dirty = True
+                elif name == SCALE_CYCLE_LABEL:
+                    scale_cycle_requested = True
+                elif name == TIMBRE_MODE_LABEL:
+                    timbre_cycle_requested = True
                 elif name in TOP_ACTION_ALL:
-                    play_action_sound(name, zone_velocity)
+                    hand_x = last_hand_x if last_hand_x is not None else x + w / 2
+                    play_action_sound(
+                        name,
+                        zone_velocity,
+                        hand_x,
+                        TIMBRE_MODES[current_timbre_idx],
+                    )
                     print(f"{name} 觸發（播放音效）。 速度: {zone_velocity:.1f}")
 
                 zone_accumulators[i] = 0
@@ -571,51 +812,56 @@ def main():
             zone_thresholds = build_zone_thresholds(COMMAND_ZONES)
             continue
 
-        if piano_top_requested:
-            current_top_names = TOP_ACTION_NAMES_PIANO
-            # 確保上方區塊顯示並更新為鋼琴音階
+        if scale_cycle_requested:
             if not menu_visible:
                 menu_visible, COMMAND_ZONES, top_zone_cache = toggle_menu_visibility(
                     menu_visible, COMMAND_ZONES, top_zone_cache, current_top_names
                 )
-            # 移除舊的上方區塊，替換成鋼琴音階的區塊
-            COMMAND_ZONES = [z for z in COMMAND_ZONES if z[4] not in TOP_ACTION_ALL]
-            top_zone_cache = build_top_zones(current_top_names)
-            COMMAND_ZONES += top_zone_cache
-            COMMAND_ZONES = ensure_toggle_label(COMMAND_ZONES, menu_visible)
-            zone_accumulators = [0] * len(COMMAND_ZONES)
-            feedback_timers = [0] * len(COMMAND_ZONES)
-            zone_thresholds = build_zone_thresholds(COMMAND_ZONES)
+            current_scale_idx = (current_scale_idx + 1) % len(SCALE_PRESETS)
+            (
+                current_top_names,
+                top_zone_cache,
+                COMMAND_ZONES,
+                zone_accumulators,
+                feedback_timers,
+                zone_thresholds,
+            ) = rebuild_top_for_preset(current_scale_idx, menu_visible, COMMAND_ZONES)
+            continue
+
+        if timbre_cycle_requested:
+            current_timbre_idx = (current_timbre_idx + 1) % len(TIMBRE_MODES)
+
+        if piano_top_requested:
+            if not menu_visible:
+                menu_visible, COMMAND_ZONES, top_zone_cache = toggle_menu_visibility(
+                    menu_visible, COMMAND_ZONES, top_zone_cache, current_top_names
+                )
+            current_scale_idx, current_preset = get_preset_by_key("piano")
+            current_top_names, top_zone_cache, COMMAND_ZONES, zone_accumulators, feedback_timers, zone_thresholds = rebuild_top_for_preset(
+                current_scale_idx, menu_visible, COMMAND_ZONES
+            )
             continue
 
         if violin_top_requested:
-            current_top_names = TOP_ACTION_NAMES_VIOLIN
             if not menu_visible:
                 menu_visible, COMMAND_ZONES, top_zone_cache = toggle_menu_visibility(
                     menu_visible, COMMAND_ZONES, top_zone_cache, current_top_names
                 )
-            COMMAND_ZONES = [z for z in COMMAND_ZONES if z[4] not in TOP_ACTION_ALL]
-            top_zone_cache = build_top_zones(current_top_names)
-            COMMAND_ZONES += top_zone_cache
-            COMMAND_ZONES = ensure_toggle_label(COMMAND_ZONES, menu_visible)
-            zone_accumulators = [0] * len(COMMAND_ZONES)
-            feedback_timers = [0] * len(COMMAND_ZONES)
-            zone_thresholds = build_zone_thresholds(COMMAND_ZONES)
+            current_scale_idx, current_preset = get_preset_by_key("violin")
+            current_top_names, top_zone_cache, COMMAND_ZONES, zone_accumulators, feedback_timers, zone_thresholds = rebuild_top_for_preset(
+                current_scale_idx, menu_visible, COMMAND_ZONES
+            )
             continue
 
         if windows_top_requested:
-            current_top_names = TOP_ACTION_NAMES_WINDOWS
             if not menu_visible:
                 menu_visible, COMMAND_ZONES, top_zone_cache = toggle_menu_visibility(
                     menu_visible, COMMAND_ZONES, top_zone_cache, current_top_names
                 )
-            COMMAND_ZONES = [z for z in COMMAND_ZONES if z[4] not in TOP_ACTION_ALL]
-            top_zone_cache = build_top_zones(current_top_names)
-            COMMAND_ZONES += top_zone_cache
-            COMMAND_ZONES = ensure_toggle_label(COMMAND_ZONES, menu_visible)
-            zone_accumulators = [0] * len(COMMAND_ZONES)
-            feedback_timers = [0] * len(COMMAND_ZONES)
-            zone_thresholds = build_zone_thresholds(COMMAND_ZONES)
+            current_scale_idx, current_preset = get_preset_by_key("windows")
+            current_top_names, top_zone_cache, COMMAND_ZONES, zone_accumulators, feedback_timers, zone_thresholds = rebuild_top_for_preset(
+                current_scale_idx, menu_visible, COMMAND_ZONES
+            )
             continue
         
         if zones_dirty:
