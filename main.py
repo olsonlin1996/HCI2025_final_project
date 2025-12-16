@@ -13,7 +13,17 @@ mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
 
-FONT_PATHS = ["C:/Windows/Fonts/msjh.ttf", "C:/Windows/Fonts/mingliu.ttc", "msjh.ttf"] # You might need to change this to a font available on your system
+FONT_PATHS = [
+    # macOS/Linux 常用路徑或內建字體名稱
+    "/System/Library/Fonts/Supplemental/Songti.ttc",  # macOS 內建宋體
+    "/System/Library/Fonts/Supplemental/PingFang.ttc", # macOS 內建蘋方體
+    "Arial Unicode MS.ttf",                           # 許多系統都有的通用字體名稱
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",   # Linux (Ubuntu) 常用中文字體
+    # Windows 路徑
+    "C:/Windows/Fonts/msjh.ttf",                      # Windows 微軟正黑體
+    "C:/Windows/Fonts/mingliu.ttc",                   # Windows 細明體
+    "msjh.ttf"
+]
 FONT_SIZE = 20
 
 # --- 參數設定 ---
@@ -269,7 +279,8 @@ def main():
 
     # --- 修改：耐心等待攝影機啟動 ---
     print(f"正在啟動攝影機 {camera_index}，這可能需要幾秒鐘...")
-    cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
+    # 不填第二參數，讓openCV自己選擇後端去打API（Windows與MacOS適用後端不同）
+    cap = cv2.VideoCapture(camera_index)
     
     start_time = time.time()
     camera_ready = False
