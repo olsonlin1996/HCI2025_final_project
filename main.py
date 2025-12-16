@@ -3,6 +3,8 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import os
 import time
+import math
+import wave
 from datetime import datetime
 import mediapipe as mp # 新增 MediaPipe 導入
 import simpleaudio as sa
@@ -131,11 +133,61 @@ BASE_ZONES = [
 COMMAND_ZONES = ensure_toggle_label(BASE_ZONES.copy(), menu_visible=False)
 
 
-def play_action_sound(action_name: str):
+def compute_velocity_factor(velocity: float):
+    """Normalize velocity into [0, 1] for gain/pitch mapping."""
+    # Velocity is in pixels/sec; clamp to avoid extreme scaling.
+    normalized = max(0.0, min(velocity / 400.0, 1.0))
+    return normalized
+
+
+def velocity_to_color(velocity: float):
+    """Map velocity to a visible color for UI feedback."""
+    factor = compute_velocity_factor(velocity)
+    # Blend between the base magenta and bright yellow as speed increases.
+    base_color = np.array(BOX_COLOR)
+    hot_color = np.array([255, 255, 0])
+    blended = (base_color * (1 - factor) + hot_color * factor).astype(int)
+    return tuple(int(c) for c in blended)
+
+
+def load_scaled_wave(path: str, velocity: float):
+    """Load a wave file and return a WaveObject scaled by velocity."""
+    if not os.path.exists(path):
+        print(f"找不到音檔：{path}")
+        return None
+
+    try:
+        with wave.open(path, "rb") as wf:
+            sample_rate = wf.getframerate()
+            num_channels = wf.getnchannels()
+            sample_width = wf.getsampwidth()
+            frames = wf.readframes(wf.getnframes())
+    except Exception as e:
+        print(f"讀取音檔失敗：{e}")
+        return None
+
+    audio_data = np.frombuffer(frames, dtype=np.int16)
+
+    velocity_factor = compute_velocity_factor(velocity)
+    gain = 0.4 + 0.6 * velocity_factor
+    pitch_factor = 1.0 + 0.25 * velocity_factor
+
+    # Apply gain with clipping protection
+    scaled = np.clip(audio_data * gain, -32768, 32767).astype(np.int16)
+    # Adjust playback rate to subtly pitch-shift according to movement speed
+    adjusted_sample_rate = int(sample_rate * pitch_factor)
+
+    return sa.WaveObject(scaled.tobytes(), num_channels, sample_width, adjusted_sample_rate)
+
+
+def play_action_sound(action_name: str, velocity: float):
     """Play the mapped tone for the given top action if available."""
     if action_name in TOP_ACTION_FREQS:
+        base_freq = TOP_ACTION_FREQS[action_name]
+        pitch_factor = 1.0 + 0.25 * compute_velocity_factor(velocity)
+        freq = int(base_freq * pitch_factor)
         try:
-            winsound.Beep(TOP_ACTION_FREQS[action_name], 200)
+            winsound.Beep(freq, 200)
         except RuntimeError:
             print(f"無法播放系統嗶聲：{action_name}")
         return
@@ -145,11 +197,12 @@ def play_action_sound(action_name: str):
         return
     sound_dir, filename = sound_info
     path = os.path.join(sound_dir, filename)
-    if not os.path.exists(path):
-        print(f"找不到音檔：{path}")
+
+    wave_obj = load_scaled_wave(path, velocity)
+    if wave_obj is None:
         return
     try:
-        sa.WaveObject.from_wave_file(path).play()
+        wave_obj.play()
     except Exception as e:
         print(f"播放失敗：{e}")
 
@@ -198,19 +251,20 @@ VAR_THRESHOLD = 75
 CAMERA_WAIT_TIMEOUT = 10 # 等待攝影機啟動的最長時間（秒）
 
 # --- 繪圖函式 ---
-def draw_ui(frame, zones, accumulators=None, threshold=None):
+def draw_ui(frame, zones, accumulators=None, threshold=None, zone_colors=None):
     # 偵錯：重新排序繪圖順序，確保框線總是可見
     for i, (x, y, w, h, name) in enumerate(zones):
+        color = zone_colors[i] if zone_colors else BOX_COLOR
         # 1. 如果有提供進度，先畫進度條
         if accumulators is not None and threshold is not None:
             # threshold 可以是單一值或對應各區塊的列表
             zone_threshold = threshold[i] if isinstance(threshold, list) else threshold
             progress = min(accumulators[i] / zone_threshold, 1.0)
             if progress > 0 and zone_threshold > 0:
-                cv2.rectangle(frame, (x, y), (x + int(w * progress), y + h), BOX_COLOR, -1)
+                cv2.rectangle(frame, (x, y), (x + int(w * progress), y + h), color, -1)
 
         # 2. 接著畫框線
-        cv2.rectangle(frame, (x, y), (x+w, y+h), BOX_COLOR, 3)
+        cv2.rectangle(frame, (x, y), (x+w, y+h), color, 3)
         
         # 3. 最後畫文字，確保文字在最上層
         # 使用 put_chinese_text 函式來顯示中文
@@ -310,6 +364,7 @@ def main():
     COMMAND_ZONES = ensure_toggle_label(BASE_ZONES.copy(), menu_visible)
     zone_thresholds = build_zone_thresholds(COMMAND_ZONES)
     window_origin = {}
+    previous_hand_points = {}
     
     # 初始化 MediaPipe Hands
     hands = mp_hands.Hands(
@@ -368,12 +423,31 @@ def main():
         if not ret: break
 
         frame = cv2.flip(frame, 1)
-        
+
         # 將 BGR 圖像轉換為 RGB
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
+
         # 處理圖像以偵測手部
         results = hands.process(frame_rgb)
+
+        # 計算每隻手的速度
+        hand_data = []
+        h_frame, w_frame, _ = frame.shape
+        current_time = time.time()
+        if results.multi_hand_landmarks and results.multi_handedness:
+            for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
+                label = handedness.classification[0].label
+                target_landmark = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_MCP]
+                cx, cy = int(target_landmark.x * w_frame), int(target_landmark.y * h_frame)
+                prev = previous_hand_points.get(label)
+                velocity = 0.0
+                if prev:
+                    dist = math.hypot(cx - prev[0], cy - prev[1])
+                    dt = current_time - prev[2]
+                    if dt > 0:
+                        velocity = dist / dt
+                previous_hand_points[label] = (cx, cy, current_time)
+                hand_data.append((hand_landmarks, label, velocity))
 
         # 繪製手部關鍵點
         if results.multi_hand_landmarks:
@@ -407,20 +481,20 @@ def main():
         windows_top_requested = False
         exit_requested = False
         toggle_beep_requested = False
+        zone_velocities = [0.0] * len(COMMAND_ZONES)
 
         for i, (x, y, w, h, name) in enumerate(COMMAND_ZONES):
             # 檢查是否有手部關鍵點在當前區域內
             hand_in_zone = False
-            if results.multi_hand_landmarks:
-                for hand_landmarks in results.multi_hand_landmarks:
-                    # 改用中指根部關節 (MIDDLE_FINGER_MCP)，作為更穩定的判斷點
+            zone_velocity = 0.0
+            if hand_data:
+                for hand_landmarks, hand_label, hand_velocity in hand_data:
                     target_landmark = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_MCP]
-                    h_frame, w_frame, c = frame.shape
                     cx, cy = int(target_landmark.x * w_frame), int(target_landmark.y * h_frame)
 
                     if x <= cx < x + w and y <= cy < y + h:
                         hand_in_zone = True
-                        break # 只要有一個手部關鍵點在區域內就足夠
+                        zone_velocity = max(zone_velocity, hand_velocity)
 
             acc_rate, decay_rate, zone_threshold = get_zone_params(name)
 
@@ -455,10 +529,12 @@ def main():
                     window_origin.pop(i, None)
                     zones_dirty = True
                 elif name in TOP_ACTION_ALL:
-                    play_action_sound(name)
-                    print(f"{name} 觸發（播放音效）。")
-                
+                    play_action_sound(name, zone_velocity)
+                    print(f"{name} 觸發（播放音效）。 速度: {zone_velocity:.1f}")
+
                 zone_accumulators[i] = 0
+
+            zone_velocities[i] = zone_velocity
 
             if exit_requested or menu_toggle_requested:
                 break
@@ -545,7 +621,8 @@ def main():
         if zones_dirty:
             zone_thresholds = build_zone_thresholds(COMMAND_ZONES)
 
-        frame = draw_ui(frame, COMMAND_ZONES, zone_accumulators, zone_thresholds)
+        zone_colors = [velocity_to_color(v) for v in zone_velocities]
+        frame = draw_ui(frame, COMMAND_ZONES, zone_accumulators, zone_thresholds, zone_colors=zone_colors)
 
         cv2.imshow("Hand Gesture Interface", frame)
         # cv2.imshow("Foreground Mask", fg_mask) # 移除此行
