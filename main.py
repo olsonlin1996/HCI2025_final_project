@@ -7,9 +7,14 @@ import math
 import wave
 from collections import deque
 from datetime import datetime
+import platform
 import mediapipe as mp # 新增 MediaPipe 導入
 import simpleaudio as sa
-import winsound
+
+try:
+    import winsound
+except ImportError:  # 非 Windows 環境無 winsound
+    winsound = None
 
 # MediaPipe 手部偵測設定
 mp_hands = mp.solutions.hands
@@ -181,6 +186,9 @@ GAIN_FADE_SECONDS = 2.5
 VISUAL_DIM_MAX = 0.45
 RELAX_INSTRUMENT_GAIN = 0.35
 INSTRUMENT_MASTER_GAIN = 1.0
+BEEP_SOUND_PATH = os.path.join("assets", "beep.wav")
+BEEP_WAVE = None
+IS_WINDOWS = platform.system() == "Windows"
 
 
 def build_top_zones(top_names=None):
@@ -487,6 +495,49 @@ def load_ambient_or_fallback(path: str):
     return generated, warning
 
 
+def _generate_beep_wave(freq: int = 880, duration_ms: int = 200, sample_rate: int = 44100):
+    """Generate a short mono beep tone as a WaveObject."""
+    duration = duration_ms / 1000.0
+    t = np.linspace(0, duration, int(sample_rate * duration), False)
+    tone = 0.35 * np.sin(2 * math.pi * freq * t)
+    audio = np.clip(tone * 32767, -32768, 32767).astype(np.int16)
+    return sa.WaveObject(audio.tobytes(), 1, 2, sample_rate)
+
+
+def load_beep_wave():
+    """Load or synthesize the shared short beep sound for cross-platform prompts."""
+    global BEEP_WAVE
+    if os.path.exists(BEEP_SOUND_PATH):
+        try:
+            BEEP_WAVE = sa.WaveObject.from_wave_file(BEEP_SOUND_PATH)
+            return
+        except Exception as e:
+            print(f"載入提示音失敗：{e}")
+
+    try:
+        BEEP_WAVE = _generate_beep_wave()
+    except Exception as e:
+        print(f"生成內建提示音失敗：{e}")
+        BEEP_WAVE = None
+
+
+def play_beep_sound(freq: int = 880, duration_ms: int = 200):
+    """Play a system beep when possible, otherwise use the shared fallback tone."""
+    if IS_WINDOWS and winsound:
+        try:
+            winsound.Beep(freq, duration_ms)
+            return
+        except RuntimeError:
+            print("無法播放系統嗶聲，改用內建提示音。")
+
+    if BEEP_WAVE:
+        try:
+            BEEP_WAVE.play()
+            return
+        except Exception as e:
+            print(f"播放提示音失敗：{e}")
+
+
 def normalize_hand_x(hand_x: float):
     if hand_x is None:
         return 0.5
@@ -553,10 +604,7 @@ def play_action_sound(action_name: str, velocity: float, hand_x: float, timbre_m
         base_freq = TOP_ACTION_FREQS[action_name]
         pitch_factor = 1.0 + 0.25 * compute_velocity_factor(velocity)
         freq = int(base_freq * pitch_factor)
-        try:
-            winsound.Beep(freq, 200)
-        except RuntimeError:
-            print(f"無法播放系統嗶聲：{action_name}")
+        play_beep_sound(freq, 200)
         return
 
     sound_info = TOP_ACTION_SOUNDS.get(action_name)
@@ -778,6 +826,7 @@ def main():
     visual_state = init_visual_state()
     last_effect_time = time.time()
     ambient_loop_data, ambient_warning = load_ambient_or_fallback(AMBIENT_SOUND_PATH)
+    load_beep_wave()
     ambient_play_obj = None
     instrument_gain = 1.0
     ambient_gain = 0.0
@@ -1027,10 +1076,7 @@ def main():
                 ambient_fade = schedule_fade(ambient_gain, 0.0, GAIN_FADE_SECONDS)
 
         if toggle_beep_requested:
-            try:
-                winsound.Beep(880, 200)
-            except RuntimeError:
-                print("無法播放系統嗶聲（切換提示）。")
+            play_beep_sound()
 
         if menu_toggle_requested:
             menu_visible, COMMAND_ZONES, top_zone_cache = toggle_menu_visibility(
