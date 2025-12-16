@@ -5,6 +5,7 @@ import os
 import time
 import math
 import wave
+from collections import deque
 from datetime import datetime
 import mediapipe as mp # 新增 MediaPipe 導入
 import simpleaudio as sa
@@ -276,6 +277,114 @@ def velocity_to_color(velocity: float):
 
 def clamp01(value: float):
     return max(0.0, min(value, 1.0))
+
+
+# --- 動態視覺效果設定 ---
+VISUAL_BUFFER_DOWNSCALE = 4
+MOTION_HISTORY_FRAMES = 30
+MOTION_VELOCITY_NORM = 160.0
+MOTION_VARIANCE_NORM = 8000.0
+
+
+def init_visual_state():
+    return {
+        "shape": None,
+        "phase": 0.0,
+        "x_coords": None,
+        "y_coords": None,
+        "buffer": None,
+    }
+
+
+def ensure_visual_state(state, frame_shape):
+    h, w = frame_shape[:2]
+    if state["shape"] == (h, w):
+        return state
+
+    small_h = max(1, h // VISUAL_BUFFER_DOWNSCALE)
+    small_w = max(1, w // VISUAL_BUFFER_DOWNSCALE)
+    xs = np.linspace(0, 2 * math.pi, small_w, dtype=np.float32)[None, :]
+    ys = np.linspace(0, 2 * math.pi, small_h, dtype=np.float32)[:, None]
+    state.update(
+        {
+            "shape": (h, w),
+            "phase": 0.0,
+            "x_coords": xs,
+            "y_coords": ys,
+            "buffer": np.zeros((small_h, small_w, 3), dtype=np.float32),
+        }
+    )
+    return state
+
+
+def compute_motion_metrics(recent_velocities, current_velocity):
+    velocity_norm = clamp01(current_velocity / MOTION_VELOCITY_NORM)
+    variance = np.var(recent_velocities) if len(recent_velocities) > 1 else 0.0
+    variance_norm = clamp01(variance / MOTION_VARIANCE_NORM)
+    motion_intensity = clamp01(0.65 * velocity_norm + 0.35 * variance_norm)
+    alpha = 0.12 + 0.5 * motion_intensity
+    return {
+        "velocity_norm": velocity_norm,
+        "variance": variance,
+        "variance_norm": variance_norm,
+        "motion_intensity": motion_intensity,
+        "alpha": clamp01(alpha),
+    }
+
+
+def update_visual_buffer(state, motion_metrics, dt):
+    if state.get("buffer") is None:
+        return state
+
+    phase_speed = 0.6 + 2.4 * motion_metrics["motion_intensity"]
+    state["phase"] += phase_speed * dt
+    freq = 1.0 + 3.0 * motion_metrics["variance_norm"]
+    amplitude = 0.35 + 0.65 * motion_metrics["motion_intensity"]
+
+    x_term = np.sin(state["x_coords"] * freq + state["phase"])
+    y_term = np.cos(state["y_coords"] * (freq * 0.6 + 0.4) + state["phase"] * 1.35)
+    wave = (x_term + y_term + 2.0) * 0.25  # normalize to 0..1 range
+    wave = np.power(wave, 1.2) * amplitude
+
+    cold_color = np.array([40, 80, 140], dtype=np.float32)
+    hot_color = np.array([160, 240, 255], dtype=np.float32)
+    state["buffer"] = cold_color + (hot_color - cold_color) * wave[:, :, None]
+    return state
+
+
+def render_visual_overlay(state):
+    if state.get("buffer") is None:
+        return None
+
+    h, w = state["shape"]
+    overlay = cv2.resize(
+        state["buffer"].astype(np.float32), (w, h), interpolation=cv2.INTER_CUBIC
+    )
+    return np.clip(overlay, 0, 255).astype(np.uint8)
+
+
+def blend_overlay_on_zones(frame, overlay, zones, base_alpha, highlights=None):
+    if overlay is None or base_alpha <= 0:
+        return frame
+
+    blended = frame.copy()
+    for idx, (x, y, w, h, _) in enumerate(zones):
+        zone_alpha = base_alpha
+        if highlights and highlights[idx]:
+            zone_alpha = clamp01(base_alpha * 1.3)
+
+        if zone_alpha <= 0:
+            continue
+
+        overlay_region = overlay[y : y + h, x : x + w]
+        target_region = blended[y : y + h, x : x + w]
+        if overlay_region.shape[:2] != target_region.shape[:2]:
+            continue
+        blended[y : y + h, x : x + w] = (
+            overlay_region * zone_alpha + target_region * (1 - zone_alpha)
+        ).astype(np.uint8)
+
+    return blended
 
 
 def schedule_fade(current: float, target: float, duration: float):
@@ -665,6 +774,9 @@ def main():
     zone_thresholds = build_zone_thresholds(COMMAND_ZONES)
     window_origin = {}
     previous_hand_points = {}
+    recent_velocities = deque(maxlen=MOTION_HISTORY_FRAMES)
+    visual_state = init_visual_state()
+    last_effect_time = time.time()
     ambient_loop_data, ambient_warning = load_ambient_or_fallback(AMBIENT_SOUND_PATH)
     ambient_play_obj = None
     instrument_gain = 1.0
@@ -765,6 +877,14 @@ def main():
             else 0.0
         )
 
+        recent_velocities.append(avg_hand_velocity)
+        motion_metrics = compute_motion_metrics(recent_velocities, avg_hand_velocity)
+        visual_state = ensure_visual_state(visual_state, frame.shape)
+        now = time.time()
+        dt = max(1e-3, now - last_effect_time)
+        visual_state = update_visual_buffer(visual_state, motion_metrics, dt)
+        last_effect_time = now
+
         # 繪製手部關鍵點
         if results.multi_hand_landmarks:
             for hand_landmarks in results.multi_hand_landmarks:
@@ -775,18 +895,13 @@ def main():
                     mp_drawing_styles.get_default_hand_landmarks_style(),
                     mp_drawing_styles.get_default_hand_connections_style())
 
-        # --- 新增：處理視覺回饋 ---
+        # --- 新增：處理視覺回饋狀態，用於動態著色 ---
+        active_feedback = [False] * len(feedback_timers)
         for i, start_time in enumerate(feedback_timers):
             if start_time > 0:
                 elapsed_time = time.time() - start_time
                 if elapsed_time < 5.0:  # 持續 5 秒
-                    x, y, w, h, _ = COMMAND_ZONES[i]
-                    
-                    # 建立一個半透明的綠色疊加層
-                    overlay = frame.copy()
-                    cv2.rectangle(overlay, (x, y), (x + w, y + h), (0, 255, 0), -1) # 綠色
-                    alpha = 0.4  # 透明度
-                    frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
+                    active_feedback[i] = True
                 else:
                     feedback_timers[i] = 0 # 重置計時器
 
@@ -1011,6 +1126,11 @@ def main():
 
         zone_colors = [velocity_to_color(v) for v in zone_velocities]
         frame = draw_ui(frame, COMMAND_ZONES, zone_accumulators, zone_thresholds, zone_colors=zone_colors)
+
+        overlay = render_visual_overlay(visual_state)
+        frame = blend_overlay_on_zones(
+            frame, overlay, COMMAND_ZONES, motion_metrics["alpha"], highlights=active_feedback
+        )
 
         if relax_state == "relax":
             dim_level = VISUAL_DIM_MAX * clamp01(ambient_gain)
