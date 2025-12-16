@@ -194,6 +194,7 @@ RELAX_INSTRUMENT_GAIN = 0.35
 INSTRUMENT_MASTER_GAIN = 1.0
 BEEP_SOUND_PATH = os.path.join("assets", "beep.wav")
 BEEP_WAVE = None
+BEEP_WARNING_SHOWN = False
 IS_WINDOWS = platform.system() == "Windows"
 
 
@@ -578,7 +579,7 @@ def load_beep_wave():
     if os.path.exists(BEEP_SOUND_PATH):
         try:
             BEEP_WAVE = sa.WaveObject.from_wave_file(BEEP_SOUND_PATH)
-            return
+            return True
         except Exception as e:
             print(f"載入提示音失敗：{e}")
 
@@ -587,6 +588,19 @@ def load_beep_wave():
     except Exception as e:
         print(f"生成內建提示音失敗：{e}")
         BEEP_WAVE = None
+
+    return BEEP_WAVE is not None
+
+
+def ensure_beep_wave_loaded():
+    global BEEP_WARNING_SHOWN
+    beep_ready = BEEP_WAVE is not None or load_beep_wave()
+
+    if not beep_ready and not BEEP_WARNING_SHOWN:
+        print("警告：無法載入或生成提示音，預設嗶聲可能無法播放。")
+        BEEP_WARNING_SHOWN = True
+
+    return beep_ready
 
 
 def play_beep_sound(freq: int = 880, duration_ms: int = 200):
@@ -598,7 +612,7 @@ def play_beep_sound(freq: int = 880, duration_ms: int = 200):
         except RuntimeError:
             print("無法播放系統嗶聲，改用內建提示音。")
 
-    if BEEP_WAVE:
+    if ensure_beep_wave_loaded() and BEEP_WAVE:
         try:
             BEEP_WAVE.play()
             return
@@ -849,6 +863,8 @@ def select_camera():
 # --- 程式主體 ---
 def main():
     global COMMAND_ZONES, INSTRUMENT_MASTER_GAIN
+
+    ensure_beep_wave_loaded()
     # --- 新增：攝影機選擇 ---
     camera_index = select_camera()
     if camera_index is None:
