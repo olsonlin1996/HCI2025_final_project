@@ -170,6 +170,16 @@ TOP_ZONE_WIDTH = 200
 TOP_ZONE_HEIGHT = 100
 TOP_ZONE_START_Y = 0  # 貼齊上緣
 COMMAND_ZONES = []
+AMBIENT_SOUND_PATH = os.path.join("ambient_sound", "ocean.wav")
+AMBIENT_TARGET_GAIN = 0.85
+RELAX_VELOCITY_THRESHOLD = 40.0
+RELAX_EXIT_VELOCITY = 65.0
+RELAX_ACCUM_THRESHOLD = 4.0
+RELAX_TRIGGER_SECONDS = 5.0
+GAIN_FADE_SECONDS = 2.5
+VISUAL_DIM_MAX = 0.45
+RELAX_INSTRUMENT_GAIN = 0.35
+INSTRUMENT_MASTER_GAIN = 1.0
 
 
 def build_top_zones(top_names=None):
@@ -264,6 +274,34 @@ def velocity_to_color(velocity: float):
     return tuple(int(c) for c in blended)
 
 
+def clamp01(value: float):
+    return max(0.0, min(value, 1.0))
+
+
+def schedule_fade(current: float, target: float, duration: float):
+    return {
+        "start": time.time(),
+        "from": current,
+        "to": target,
+        "duration": max(0.01, duration),
+    }
+
+
+def step_fade(current: float, fade_info):
+    if not fade_info:
+        return current, None
+
+    elapsed = time.time() - fade_info["start"]
+    duration = fade_info["duration"]
+    progress = clamp01(elapsed / duration) if duration else 1.0
+    new_value = fade_info["from"] + (fade_info["to"] - fade_info["from"]) * progress
+
+    if progress >= 1.0:
+        return new_value, None
+    fade_info["last"] = new_value
+    return new_value, fade_info
+
+
 def load_wave_data(path: str):
     """Load raw wave data for blending."""
     if not os.path.exists(path):
@@ -296,13 +334,48 @@ def load_scaled_wave(path: str, velocity: float):
 
     sample_rate, num_channels, sample_width, audio_data = wave_data
     velocity_factor = compute_velocity_factor(velocity)
-    gain = 0.4 + 0.6 * velocity_factor
+    gain = (0.4 + 0.6 * velocity_factor) * INSTRUMENT_MASTER_GAIN
     pitch_factor = 1.0 + 0.25 * velocity_factor
 
     scaled = np.clip(audio_data * gain, -32768, 32767).astype(np.int16)
     adjusted_sample_rate = int(sample_rate * pitch_factor)
 
     return sa.WaveObject(scaled.tobytes(), num_channels, sample_width, adjusted_sample_rate)
+
+
+def build_wave_with_gain(wave_data, gain: float):
+    """Scale a pre-loaded wave tuple to the desired gain and return a WaveObject."""
+    if not wave_data:
+        return None
+
+    sample_rate, num_channels, sample_width, audio_data = wave_data
+    scaled = np.clip(audio_data * gain, -32768, 32767).astype(np.int16)
+    return sa.WaveObject(scaled.tobytes(), num_channels, sample_width, sample_rate)
+
+
+def generate_fallback_ambient(duration: float = 2.5, sample_rate: int = 44100):
+    """Generate a soft stereo noise bed as a built-in ambient fallback."""
+    num_samples = int(duration * sample_rate)
+    # Combine two slow sine waves and lightly randomized noise to avoid a harsh tone.
+    t = np.linspace(0, duration, num_samples, endpoint=False)
+    slow_wave = 0.15 * np.sin(2 * math.pi * 0.35 * t)
+    shimmer = 0.08 * np.sin(2 * math.pi * 0.85 * t + math.pi / 3)
+    noise = np.random.normal(0, 0.04, num_samples)
+    mix = slow_wave + shimmer + noise
+    stereo = np.stack([mix, mix * 0.9], axis=-1)
+    audio = np.clip(stereo * 32767, -32768, 32767).astype(np.int16)
+    return sample_rate, 2, 2, audio
+
+
+def load_ambient_or_fallback(path: str):
+    """Load ambient file if present; otherwise synthesize an in-memory loop."""
+    wave_data = load_wave_data(path)
+    if wave_data:
+        return wave_data, None
+
+    generated = generate_fallback_ambient()
+    warning = f"找不到環境音檔：{path}，改用內建環境音。"
+    return generated, warning
 
 
 def normalize_hand_x(hand_x: float):
@@ -337,7 +410,7 @@ def build_blended_wave(note_key: str, velocity: float, hand_x: float):
             return None
         sr, ch, sw, audio = wave_data
         velocity_factor = compute_velocity_factor(velocity)
-        gain_scale = (0.3 + 0.7 * velocity_factor) * gain
+        gain_scale = (0.3 + 0.7 * velocity_factor) * gain * INSTRUMENT_MASTER_GAIN
         adjusted = np.clip(audio * gain_scale, -32768, 32767).astype(np.int16)
         return sr, ch, sw, adjusted
 
@@ -550,7 +623,7 @@ def select_camera():
 
 # --- 程式主體 ---
 def main():
-    global COMMAND_ZONES
+    global COMMAND_ZONES, INSTRUMENT_MASTER_GAIN
     # --- 新增：攝影機選擇 ---
     camera_index = select_camera()
     if camera_index is None:
@@ -592,6 +665,15 @@ def main():
     zone_thresholds = build_zone_thresholds(COMMAND_ZONES)
     window_origin = {}
     previous_hand_points = {}
+    ambient_loop_data, ambient_warning = load_ambient_or_fallback(AMBIENT_SOUND_PATH)
+    ambient_play_obj = None
+    instrument_gain = 1.0
+    ambient_gain = 0.0
+    instrument_fade = None
+    ambient_fade = None
+    relax_state = "active"
+    relax_candidate_start = None
+    ambient_warning_shown = False
     
     # 初始化 MediaPipe Hands
     hands = mp_hands.Hands(
@@ -613,6 +695,7 @@ def main():
         cv2.putText(frame, "Press 's' to start calibration", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
         cv2.putText(frame, "Press 'e' to edit layout", (50, 90), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
         cv2.putText(frame, "Press 'q' to quit", (50, 130), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+        cv2.putText(frame, "Low motion will enter Relax mode (ambient)", (50, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 200), 2)
 
         frame = draw_ui(frame, COMMAND_ZONES, None, zone_thresholds)
         cv2.imshow(window_name, frame)
@@ -675,6 +758,12 @@ def main():
                         velocity = dist / dt
                 previous_hand_points[label] = (cx, cy, current_time)
                 hand_data.append((hand_landmarks, label, velocity))
+
+        avg_hand_velocity = (
+            sum(v for _, _, v in hand_data) / len(hand_data)
+            if hand_data
+            else 0.0
+        )
 
         # 繪製手部關鍵點
         if results.multi_hand_landmarks:
@@ -780,10 +869,47 @@ def main():
             if exit_requested or menu_toggle_requested:
                 break
 
+        avg_zone_accumulator = (
+            sum(zone_accumulators) / len(zone_accumulators)
+            if zone_accumulators
+            else 0.0
+        )
+
         if exit_requested:
             cap.release()
             cv2.destroyAllWindows()
             return
+
+        motion_low = (
+            avg_hand_velocity < RELAX_VELOCITY_THRESHOLD
+            and avg_zone_accumulator < RELAX_ACCUM_THRESHOLD
+        )
+
+        if motion_low:
+            if relax_candidate_start is None:
+                relax_candidate_start = time.time()
+            elif (
+                relax_state == "active"
+                and time.time() - relax_candidate_start >= RELAX_TRIGGER_SECONDS
+            ):
+                relax_state = "relax"
+                instrument_fade = schedule_fade(
+                    instrument_gain, RELAX_INSTRUMENT_GAIN, GAIN_FADE_SECONDS
+                )
+                ambient_fade = schedule_fade(
+                    ambient_gain, AMBIENT_TARGET_GAIN, GAIN_FADE_SECONDS
+                )
+                if ambient_warning and not ambient_warning_shown:
+                    print(ambient_warning)
+                    ambient_warning_shown = True
+        else:
+            relax_candidate_start = None
+            if relax_state == "relax" and avg_hand_velocity >= RELAX_EXIT_VELOCITY:
+                relax_state = "active"
+                instrument_fade = schedule_fade(
+                    instrument_gain, 1.0, GAIN_FADE_SECONDS
+                )
+                ambient_fade = schedule_fade(ambient_gain, 0.0, GAIN_FADE_SECONDS)
 
         if toggle_beep_requested:
             try:
@@ -863,12 +989,63 @@ def main():
                 current_scale_idx, menu_visible, COMMAND_ZONES
             )
             continue
-        
+
         if zones_dirty:
             zone_thresholds = build_zone_thresholds(COMMAND_ZONES)
 
+        instrument_gain, instrument_fade = step_fade(instrument_gain, instrument_fade)
+        ambient_gain, ambient_fade = step_fade(ambient_gain, ambient_fade)
+        INSTRUMENT_MASTER_GAIN = instrument_gain
+
+        if relax_state == "relax" and ambient_gain > 0 and ambient_loop_data:
+            should_start = ambient_play_obj is None or not ambient_play_obj.is_playing()
+            if should_start:
+                wave_obj = build_wave_with_gain(
+                    ambient_loop_data, max(0.05, ambient_gain)
+                )
+                if wave_obj:
+                    ambient_play_obj = wave_obj.play()
+        elif relax_state == "active" and ambient_gain <= 0.05 and ambient_play_obj:
+            ambient_play_obj.stop()
+            ambient_play_obj = None
+
         zone_colors = [velocity_to_color(v) for v in zone_velocities]
         frame = draw_ui(frame, COMMAND_ZONES, zone_accumulators, zone_thresholds, zone_colors=zone_colors)
+
+        if relax_state == "relax":
+            dim_level = VISUAL_DIM_MAX * clamp01(ambient_gain)
+            if dim_level > 0:
+                frame = cv2.addWeighted(
+                    frame, 1 - dim_level, np.zeros_like(frame), dim_level, 0
+                )
+
+        state_hint = "活躍模式：揮動手掌演奏與觸發音效"
+        if relax_state == "relax":
+            state_hint = "放鬆模式：音量降低並播放環境音，移動手掌返回演奏"
+
+        cv2.putText(
+            frame,
+            state_hint,
+            (50, 60),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (255, 255, 255),
+            2,
+        )
+
+        if relax_candidate_start and relax_state == "active":
+            countdown = max(
+                0.0, RELAX_TRIGGER_SECONDS - (time.time() - relax_candidate_start)
+            )
+            cv2.putText(
+                frame,
+                f"放鬆模式倒數 {countdown:0.1f}s (保持低速)",
+                (50, 95),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (200, 220, 255),
+                2,
+            )
 
         cv2.imshow("Hand Gesture Interface", frame)
         # cv2.imshow("Foreground Mask", fg_mask) # 移除此行
