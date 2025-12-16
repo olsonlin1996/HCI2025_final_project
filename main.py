@@ -152,6 +152,7 @@ def play_action_sound(action_name: str):
         sa.WaveObject.from_wave_file(path).play()
     except Exception as e:
         print(f"播放失敗：{e}")
+
 TRIGGER_THRESHOLD = 15
 ACCUMULATION_RATE = 2
 DECAY_RATE = 1
@@ -242,10 +243,9 @@ def select_camera():
     for i in range(5): # 嘗試檢查 0-4 的索引
         cap_test = cv2.VideoCapture(i)
         if cap_test.isOpened():
-            ret, _ = cap_test.read()
-            if ret:
-                available_cameras.append(i)
-            cap_test.release()
+            available_cameras.append(i)
+
+        cap_test.release()
     
     if not available_cameras:
         print("錯誤：找不到任何可用的攝影機。")
