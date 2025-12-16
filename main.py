@@ -5,6 +5,8 @@ import os
 import time
 import math
 import wave
+import subprocess
+import tempfile
 from collections import deque
 from datetime import datetime
 import platform
@@ -176,7 +178,11 @@ TOP_ZONE_WIDTH = 200
 TOP_ZONE_HEIGHT = 100
 TOP_ZONE_START_Y = 0  # 貼齊上緣
 COMMAND_ZONES = []
-AMBIENT_SOUND_PATH = os.path.join("ambient_sound", "ocean.wav")
+AMBIENT_SOUND_FILES = [
+    ("ocean", os.path.join("ambient_sound", "ocean.mp3")),
+    ("wind", os.path.join("ambient_sound", "wind.mp3")),
+]
+AMBIENT_SOUND_PATH = AMBIENT_SOUND_FILES[0][1]
 AMBIENT_TARGET_GAIN = 0.85
 RELAX_VELOCITY_THRESHOLD = 40.0
 RELAX_EXIT_VELOCITY = 65.0
@@ -419,14 +425,59 @@ def step_fade(current: float, fade_info):
     return new_value, fade_info
 
 
+def convert_mp3_to_wav(mp3_path: str):
+    """Transcode an MP3 file to a temporary WAV so it can be loaded."""
+    fd, temp_path = tempfile.mkstemp(suffix=".wav")
+    os.close(fd)
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-v",
+        "error",
+        "-i",
+        mp3_path,
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+        temp_path,
+    ]
+
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return temp_path
+    except FileNotFoundError:
+        print("找不到 ffmpeg，請先安裝或手動將 MP3 轉成 WAV 放在相同路徑。")
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.decode(errors="ignore") if e.stderr else str(e)
+        print(f"轉換 MP3 失敗：{stderr.strip()}")
+
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
+    return None
+
+
 def load_wave_data(path: str):
-    """Load raw wave data for blending."""
+    """Load raw wave data for blending.
+
+    Supports WAV directly and will attempt to transcode MP3 files via ffmpeg
+    when available so users can drop in downloaded ambient tracks.
+    """
     if not os.path.exists(path):
         print(f"找不到音檔：{path}")
         return None
 
+    temp_wav_path = None
     try:
-        with wave.open(path, "rb") as wf:
+        source_path = path
+        if path.lower().endswith(".mp3"):
+            temp_wav_path = convert_mp3_to_wav(path)
+            if not temp_wav_path:
+                return None
+            source_path = temp_wav_path
+
+        with wave.open(source_path, "rb") as wf:
             sample_rate = wf.getframerate()
             num_channels = wf.getnchannels()
             sample_width = wf.getsampwidth()
@@ -434,6 +485,9 @@ def load_wave_data(path: str):
     except Exception as e:
         print(f"讀取音檔失敗：{e}")
         return None
+    finally:
+        if temp_wav_path and os.path.exists(temp_wav_path):
+            os.remove(temp_wav_path)
 
     if sample_width != 2:
         print(f"不支援的位寬：{sample_width}，預期 16-bit wav")
@@ -482,6 +536,20 @@ def generate_fallback_ambient(duration: float = 2.5, sample_rate: int = 44100):
     stereo = np.stack([mix, mix * 0.9], axis=-1)
     audio = np.clip(stereo * 32767, -32768, 32767).astype(np.int16)
     return sample_rate, 2, 2, audio
+
+
+def resolve_ambient_path():
+    """Pick the first available ambient file, or return default with a warning."""
+    for _label, path in AMBIENT_SOUND_FILES:
+        if os.path.exists(path):
+            return path, None
+
+    expected_locations = ", ".join(path for _label, path in AMBIENT_SOUND_FILES)
+    warning = (
+        "找不到環境音檔，將改用內建合成環境音。"
+        f"請將檔案放在：{expected_locations}"
+    )
+    return AMBIENT_SOUND_PATH, warning
 
 
 def load_ambient_or_fallback(path: str):
@@ -825,8 +893,11 @@ def main():
     recent_velocities = deque(maxlen=MOTION_HISTORY_FRAMES)
     visual_state = init_visual_state()
     last_effect_time = time.time()
-    ambient_loop_data, ambient_warning = load_ambient_or_fallback(AMBIENT_SOUND_PATH)
-    load_beep_wave()
+    ambient_path, ambient_precheck_warning = resolve_ambient_path()
+    ambient_loop_data, ambient_warning = load_ambient_or_fallback(ambient_path)
+    ambient_warning = ambient_warning or ambient_precheck_warning
+    if ambient_warning:
+        print(ambient_warning)
     ambient_play_obj = None
     instrument_gain = 1.0
     ambient_gain = 0.0
@@ -834,7 +905,7 @@ def main():
     ambient_fade = None
     relax_state = "active"
     relax_candidate_start = None
-    ambient_warning_shown = False
+    ambient_warning_shown = ambient_warning is not None
     
     # 初始化 MediaPipe Hands
     hands = mp_hands.Hands(
