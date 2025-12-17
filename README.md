@@ -23,6 +23,31 @@
   ```bash
   brew install ffmpeg opencv
   ```
+- Apple Silicon 安裝 Mediapipe 建議：
+  - 優先使用 arm64 wheels，例如：`pip install "mediapipe==0.10.11"`（已發佈 macOS arm64 版）或 `pip install mediapipe-silicon`。
+  - 若遇到 arm64 版缺失，可改用 Rosetta x86_64 Python：
+    ```bash
+    arch -x86_64 /usr/bin/python3 -m venv .venv-x86
+    source .venv-x86/bin/activate
+    pip install mediapipe==0.10.11
+    ```
+  - 驗證安裝：
+    ```bash
+    python -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements.txt
+    pip install "mediapipe==0.10.11"  # 或 mediapipe-silicon
+    python - <<'PY'
+    import mediapipe as mp; import cv2; import numpy as np; print('mediapipe', mp.__version__)
+    PY
+    ```
+- 需要自行編譯或使用 Bazel/clang（例如調整 Mediapipe 原始碼）時，可先安裝並鎖定版本以降低失敗率：
+  ```bash
+  brew install bazelisk llvm
+  export CC=/opt/homebrew/opt/llvm/bin/clang
+  export CXX=/opt/homebrew/opt/llvm/bin/clang++
+  bazelisk version  # 範例：macOS 14 (Apple Silicon) 常用的 bazelisk 7.x
+  ```
 - 首次執行時系統會詢問相機與麥克風權限，請選擇允許。
   - 若被阻擋，可至 **系統設定 → 隱私權與安全性 → 相機/麥克風** 勾選「Python」或「Terminal」允許存取。
 
