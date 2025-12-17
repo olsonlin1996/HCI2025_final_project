@@ -24,9 +24,11 @@ mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
 
 FONT_PATHS = [
-    # macOS/Linux 常用路徑或內建字體名稱
+    # macOS/Linux 常用路徑或內建字體名稱（macOS 路徑優先）
+    "/System/Library/Fonts/PingFang.ttc",             # macOS 內建蘋方體
+    "/System/Library/Fonts/STHeiti Medium.ttc",       # macOS 內建黑體
+    "/System/Library/Fonts/Supplemental/PingFang.ttc",
     "/System/Library/Fonts/Supplemental/Songti.ttc",  # macOS 內建宋體
-    "/System/Library/Fonts/Supplemental/PingFang.ttc", # macOS 內建蘋方體
     "Arial Unicode MS.ttf",                           # 許多系統都有的通用字體名稱
     "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",   # Linux (Ubuntu) 常用中文字體
     # Windows 路徑
@@ -35,6 +37,8 @@ FONT_PATHS = [
     "msjh.ttf"
 ]
 FONT_SIZE = 20
+_FONT_CACHE = {}
+_FONT_WARNING_SHOWN = False
 
 # --- 參數設定 ---
 CAP_WIDTH = 1280
@@ -809,19 +813,31 @@ def draw_ui(frame, zones, accumulators=None, threshold=None, zone_colors=None):
     return frame
 
 def put_chinese_text(frame, text, position, font_paths, font_size, color):
+    global _FONT_WARNING_SHOWN
     img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(img_pil)
     
     font = None
     for path in font_paths:
+        cache_key = (path, font_size)
+        if cache_key in _FONT_CACHE:
+            cached = _FONT_CACHE[cache_key]
+            if cached:
+                font = cached
+                break
+            continue
         try:
-            font = ImageFont.truetype(path, font_size)
+            loaded_font = ImageFont.truetype(path, font_size)
+            _FONT_CACHE[cache_key] = loaded_font
+            font = loaded_font
             break
         except IOError:
-            continue
+            _FONT_CACHE[cache_key] = None
 
     if font is None:
-        print(f"錯誤：找不到任何字體檔案於 {font_paths}，請確認路徑是否正確。將使用預設字體。")
+        if not _FONT_WARNING_SHOWN:
+            print(f"錯誤：找不到任何字體檔案於 {font_paths}，請確認路徑是否正確。將使用預設字體。")
+            _FONT_WARNING_SHOWN = True
         font = ImageFont.load_default()
     
     draw.text(position, text, font=font, fill=(color[2], color[1], color[0])) # OpenCV BGR to PIL RGB
