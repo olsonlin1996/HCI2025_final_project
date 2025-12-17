@@ -82,6 +82,13 @@ NOTE_FILENAMES = {
     "so": "g1.wav",
     "la": "a1.wav",
     "ti": "b1.wav",
+    "do3": "c3.wav",
+    "re3": "d3.wav",
+    "mi3": "e3.wav",
+    "fa3": "f3.wav",
+    "so3": "g3.wav",
+    "la3": "a3.wav",
+    "ti3": "b3.wav",
     "gong": "c1.wav",
     "shang": "d1.wav",
     "jue": "e1.wav",
@@ -112,14 +119,6 @@ TOP_ACTION_FREQS = {
 }
 SCALE_PRESETS = [
     {
-        "key": "default",
-        "label": "預設嗶聲",
-        "names": TOP_ACTION_NAMES_DEFAULT,
-        "note_keys": ["do", "re", "mi", "fa", "so"],
-        "sound_dir": None,
-        "use_beep": True,
-    },
-    {
         "key": "piano",
         "label": "鋼琴五聲",
         "names": TOP_ACTION_NAMES_PIANO,
@@ -131,17 +130,9 @@ SCALE_PRESETS = [
         "key": "violin",
         "label": "小提琴五聲",
         "names": TOP_ACTION_NAMES_VIOLIN,
-        "note_keys": ["do", "re", "mi", "fa", "so"],
+        "note_keys": ["do3", "re3", "mi3", "fa3", "so3"],
         "sound_dir": VIOLIN_SOUND_DIR,
         "use_beep": False,
-    },
-    {
-        "key": "windows",
-        "label": "Windows 嗶聲",
-        "names": TOP_ACTION_NAMES_WINDOWS,
-        "note_keys": ["do", "re", "mi", "fa", "so"],
-        "sound_dir": None,
-        "use_beep": True,
     },
     {
         "key": "chinese",
@@ -430,76 +421,80 @@ def step_fade(current: float, fade_info):
     return new_value, fade_info
 
 
-def convert_mp3_to_wav(mp3_path: str):
-    """Transcode an MP3 file to a temporary WAV so it can be loaded."""
+# --- 音訊處理核心 (修正版) ---
+def ensure_standard_wav(input_path: str):
+    """
+    利用 ffmpeg 將任何音檔（MP3 或非標準 WAV）轉為標準 44100Hz, 16-bit, 立體聲的臨時 WAV。
+    這能解決 'Weird sample rates' 的錯誤。
+    """
     fd, temp_path = tempfile.mkstemp(suffix=".wav")
     os.close(fd)
 
+    # ffmpeg 強制轉換參數：-ar 44100 (取樣率), -ac 2 (雙聲道), -sample_fmt s16 (16位元)
     cmd = [
-        "ffmpeg",
-        "-y",
-        "-v",
-        "error",
-        "-i",
-        mp3_path,
-        "-ar",
-        "44100",
-        "-ac",
-        "2",
-        temp_path,
+        "ffmpeg", "-y", "-v", "error", "-i", input_path,
+        "-ar", "44100", "-ac", "2", "-sample_fmt", "s16", "-f", "wav", temp_path
     ]
 
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         return temp_path
     except FileNotFoundError:
-        print("找不到 ffmpeg，請先安裝或手動將 MP3 轉成 WAV 放在相同路徑。")
-    except subprocess.CalledProcessError as e:
-        stderr = e.stderr.decode(errors="ignore") if e.stderr else str(e)
-        print(f"轉換 MP3 失敗：{stderr.strip()}")
-
-    if os.path.exists(temp_path):
-        os.remove(temp_path)
-    return None
-
+        print("系統找不到 ffmpeg，請先執行 'brew install ffmpeg' (macOS) 或 'apt install ffmpeg' (Linux)。")
+        if os.path.exists(temp_path): os.remove(temp_path)
+        return None
+    except Exception as e:
+        # print(f"音檔標準化失敗 ({input_path}): {e}") # 可取消註解查看詳細錯誤
+        if os.path.exists(temp_path): os.remove(temp_path)
+        return None
 
 def load_wave_data(path: str):
-    """Load raw wave data for blending.
-
-    Supports WAV directly and will attempt to transcode MP3 files via ffmpeg
-    when available so users can drop in downloaded ambient tracks.
+    """
+    讀取音檔數據。
+    如果檔案是 MP3 或取樣率不是 44100Hz (導致 simpleaudio 報錯)，會自動進行標準化轉換。
     """
     if not os.path.exists(path):
         print(f"找不到音檔：{path}")
         return None
 
     temp_wav_path = None
-    try:
-        source_path = path
-        if path.lower().endswith(".mp3"):
-            temp_wav_path = convert_mp3_to_wav(path)
-            if not temp_wav_path:
-                return None
-            source_path = temp_wav_path
+    needs_convert = False
 
+    # 1. 檢查是否需要轉換
+    try:
+        with wave.open(path, "rb") as wf:
+            # simpleaudio 在 macOS 上通常要求 44100Hz 且為 16-bit
+            if wf.getframerate() != 44100 or wf.getsampwidth() != 2:
+                needs_convert = True
+    except:
+        # 如果直接用 wave 打不開 (例如是 MP3 或者是損壞的檔頭)，就強制嘗試轉換
+        needs_convert = True
+
+    source_path = path
+
+    # 2. 如果需要，執行轉換
+    if needs_convert:
+        temp_wav_path = ensure_standard_wav(path)
+        if not temp_wav_path:
+            return None # 轉換失敗
+        source_path = temp_wav_path
+
+    # 3. 讀取最終的標準 WAV
+    try:
         with wave.open(source_path, "rb") as wf:
             sample_rate = wf.getframerate()
             num_channels = wf.getnchannels()
             sample_width = wf.getsampwidth()
             frames = wf.readframes(wf.getnframes())
+            audio_data = np.frombuffer(frames, dtype=np.int16)
+            return sample_rate, num_channels, sample_width, audio_data
     except Exception as e:
         print(f"讀取音檔失敗：{e}")
         return None
     finally:
+        # 清理暫存檔
         if temp_wav_path and os.path.exists(temp_wav_path):
             os.remove(temp_wav_path)
-
-    if sample_width != 2:
-        print(f"不支援的位寬：{sample_width}，預期 16-bit wav")
-        return None
-
-    audio_data = np.frombuffer(frames, dtype=np.int16)
-    return sample_rate, num_channels, sample_width, audio_data
 
 
 def load_scaled_wave(path: str, velocity: float):
@@ -510,14 +505,18 @@ def load_scaled_wave(path: str, velocity: float):
 
     sample_rate, num_channels, sample_width, audio_data = wave_data
     velocity_factor = compute_velocity_factor(velocity)
+    
+    # 保留音量變化
     gain = (0.4 + 0.6 * velocity_factor) * INSTRUMENT_MASTER_GAIN
-    pitch_factor = 1.0 + 0.25 * velocity_factor
+    
+    # --- 修改處：移除 Pitch Factor ---
+    # pitch_factor = 1.0 + 0.25 * velocity_factor
+    # adjusted_sample_rate = int(sample_rate * pitch_factor)
 
     scaled = np.clip(audio_data * gain, -32768, 32767).astype(np.int16)
-    adjusted_sample_rate = int(sample_rate * pitch_factor)
-
-    return sa.WaveObject(scaled.tobytes(), num_channels, sample_width, adjusted_sample_rate)
-
+    
+    # 直接使用原始 sample_rate
+    return sa.WaveObject(scaled.tobytes(), num_channels, sample_width, sample_rate)
 
 def build_wave_with_gain(wave_data, gain: float):
     """Scale a pre-loaded wave tuple to the desired gain and return a WaveObject."""
@@ -629,7 +628,6 @@ def normalize_hand_x(hand_x: float):
         return 0.5
     return max(0.0, min(hand_x / CAP_WIDTH, 1.0))
 
-
 def build_blended_wave(note_key: str, velocity: float, hand_x: float):
     """Blend multiple layers according to horizontal position."""
     layer_count = len(TIMBRE_LAYERS)
@@ -651,6 +649,7 @@ def build_blended_wave(note_key: str, velocity: float, hand_x: float):
         filename = NOTE_FILENAMES.get(note_key)
         if not filename:
             return None
+        # 確保這裡使用的是修正後的 load_wave_data (包含 ffmpeg 標準化)
         wave_data = load_wave_data(os.path.join(layer_info["dir"], filename))
         if not wave_data:
             return None
@@ -679,10 +678,12 @@ def build_blended_wave(note_key: str, velocity: float, hand_x: float):
             blended[: len(audio)] + audio[: len(blended)], -32768, 32767
         )
 
-    pitch_factor = 1.0 + 0.25 * compute_velocity_factor(velocity)
-    adjusted_sample_rate = int(sample_rate * pitch_factor)
-    return sa.WaveObject(blended.tobytes(), num_channels, sample_width, adjusted_sample_rate)
-
+    # --- 修改處：移除 Pitch Factor ---
+    # pitch_factor = 1.0 + 0.25 * compute_velocity_factor(velocity)
+    # adjusted_sample_rate = int(sample_rate * pitch_factor)
+    
+    # 直接使用原始 sample_rate
+    return sa.WaveObject(blended.tobytes(), num_channels, sample_width, sample_rate)
 
 def play_action_sound(action_name: str, velocity: float, hand_x: float, timbre_mode: str):
     """Play the mapped tone for the given top action if available."""
@@ -914,7 +915,7 @@ def main():
 
     # 介面狀態：預設隱藏上方五個功能區塊
     menu_visible = False
-    current_scale_idx, current_preset = get_preset_by_key("default")
+    current_scale_idx, current_preset = get_preset_by_key("piano")
     current_timbre_idx = 0
     current_top_names = current_preset["names"]
     top_zone_cache = build_top_zones(current_top_names)
@@ -1292,28 +1293,26 @@ def main():
         if relax_state == "relax":
             state_hint = "放鬆模式：音量降低並播放環境音，移動手掌返回演奏"
 
-        cv2.putText(
+        frame = put_chinese_text(
             frame,
             state_hint,
             (50, 60),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (255, 255, 255),
-            2,
+            FONT_PATHS,
+            24,
+            (255, 255, 255)
         )
 
         if relax_candidate_start and relax_state == "active":
             countdown = max(
                 0.0, RELAX_TRIGGER_SECONDS - (time.time() - relax_candidate_start)
             )
-            cv2.putText(
+            frame = put_chinese_text(
                 frame,
                 f"放鬆模式倒數 {countdown:0.1f}s (保持低速)",
                 (50, 95),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (200, 220, 255),
-                2,
+                FONT_PATHS,
+                24,
+                (200, 220, 255)
             )
 
         cv2.imshow("Hand Gesture Interface", frame)
