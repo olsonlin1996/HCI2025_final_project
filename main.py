@@ -391,22 +391,30 @@ def blend_overlay_on_zones(frame, overlay, zones, base_alpha, highlights=None):
     blended = frame.copy()
     for idx, (x, y, w, h, _) in enumerate(zones):
         zone_alpha = base_alpha
-        if highlights and highlights[idx]:
+        
+        # --- 修改處：增加 idx < len(highlights) 的安全檢查 ---
+        # 這樣就算 highlights 列表比 zones 短，也不會報錯
+        if highlights and idx < len(highlights) and highlights[idx]:
             zone_alpha = clamp01(base_alpha * 1.3)
 
         if zone_alpha <= 0:
             continue
+            
+        # 確保繪圖不超出畫面邊界
+        if y + h > frame.shape[0] or x + w > frame.shape[1]:
+            continue
 
         overlay_region = overlay[y : y + h, x : x + w]
         target_region = blended[y : y + h, x : x + w]
+        
         if overlay_region.shape[:2] != target_region.shape[:2]:
             continue
+            
         blended[y : y + h, x : x + w] = (
             overlay_region * zone_alpha + target_region * (1 - zone_alpha)
         ).astype(np.uint8)
 
     return blended
-
 
 def schedule_fade(current: float, target: float, duration: float):
     return {
@@ -795,13 +803,25 @@ def build_instrument_bottom_zones(prev_label, next_label):
     return [left_zone, right_zone]
 
 def swap_bottom_to_instruments(zones, current_idx):
-    """確保底部是導航按鈕，並更新為正確的文字"""
+    """
+    確保底部顯示：[上一頁] + [BASE_ZONES] + [下一頁]
+    並保留原本已存在的上方音階按鈕 (Top Actions)
+    """
+    # 1. 準備左右導航按鈕
     prev_label, next_label = get_nav_labels(current_idx)
+    nav_left = (*NAV_BTN_LEFT_RECT, prev_label)
+    nav_right = (*NAV_BTN_RIGHT_RECT, next_label)
     
-    base_names = [z[4] for z in BASE_ZONES]
-    kept = [z for z in zones if z[4] in base_names or z[4] in TOP_ACTION_ALL]
+    # 2. 準備中間的功能按鈕 (直接從全域 BASE_ZONES 拿，不受文字變化影響)
+    center_buttons = BASE_ZONES.copy()
     
-    return kept + build_instrument_bottom_zones(prev_label, next_label)
+    # 3. 保留上方音階區塊 (如果存在的話)
+    # 過濾出屬於上方音階 (TOP_ACTION_ALL) 的區塊
+    top_kept = [z for z in zones if z[4] in TOP_ACTION_ALL]
+    
+    # 4. 組合所有按鈕：[左] + [中間...] + [右] + [上方...]
+    return [nav_left] + center_buttons + [nav_right] + top_kept
+
 GET_READY_SECONDS = 3    # 按下按鍵後的準備時間
 CALIBRATION_SECONDS = 3  # 正式校準時間
 VAR_THRESHOLD = 75
@@ -809,47 +829,33 @@ CAMERA_WAIT_TIMEOUT = 10 # 等待攝影機啟動的最長時間（秒）
 
 # --- 繪圖函式 ---
 def draw_ui(frame, zones, accumulators=None, threshold=None, zone_colors=None):
-    # 偵錯：重新排序繪圖順序，確保框線總是可見
     for i, (x, y, w, h, name) in enumerate(zones):
-        # 取得原始顏色
+        # 處理顏色 (防呆)
         raw_color = zone_colors[i] if zone_colors else BOX_COLOR
-        
-        # 【修正點 1：自動解包多餘的層級】
-        # 如果 raw_color 裡面的第一個元素竟然還是 list 或 tuple (例如 [[255,0,0]])，就往內剝一層
         if isinstance(raw_color, (list, tuple)) and len(raw_color) > 0 and isinstance(raw_color[0], (list, tuple)):
             raw_color = raw_color[0]
-            
-        # 【修正點 2：強制轉型為標準整數】
-        # 確保顏色是標準 tuple (int, int, int)
-        if isinstance(raw_color, (list, tuple)):
-            try:
-                color = tuple(int(c) for c in raw_color)
-            except TypeError:
-                # 萬一還是失敗，回退到預設顏色，避免程式崩潰 (Fallback)
-                print(f"[Warning] Color format error at index {i}: {raw_color}, using default Green.")
-                color = (0, 255, 0)
-        else:
-            # 處理單一數值的情況
-            v = int(raw_color)
-            color = (v, v, v)
-
-        # 確保座標是標準整數
-        x, y, w, h = int(x), int(y), int(w), int(h)
-
-        # --- 以下維持原樣 ---
-        # 1. 如果有提供進度，先畫進度條
-        if accumulators is not None and threshold is not None:
-            # threshold 可以是單一值或對應各區塊的列表
-            zone_threshold = threshold[i] if isinstance(threshold, list) else threshold
-            if zone_threshold > 0:
-                progress = min(accumulators[i] / zone_threshold, 1.0)
-                if progress > 0:
-                    cv2.rectangle(frame, (x, y), (x + int(w * progress), y + h), color, -1)
-
-        # 2. 接著畫框線
-        cv2.rectangle(frame, (x, y), (x + w, y + h), color, 3)
+        try: 
+            color = tuple(int(c) for c in raw_color)
+        except: 
+            color = (0, 255, 0)
         
-        # 3. 最後畫文字
+        x, y, w, h = int(x), int(y), int(w), int(h)
+        
+        # 繪製進度條 (這裡加上了防當機機制)
+        if accumulators is not None and threshold is not None:
+            # 【關鍵修正】：如果計時器列表比區域少，自動補 0，防止 IndexError
+            if i >= len(accumulators):
+                accumulators.append(0.0)
+            
+            t = threshold[i] if isinstance(threshold, list) else threshold
+            if t > 0:
+                progress = min(accumulators[i] / t, 1.0)
+                if progress > 0: 
+                    cv2.rectangle(frame, (x, y), (x + int(w * progress), y + h), color, -1)
+        
+        # 繪製外框
+        cv2.rectangle(frame, (x, y), (x + w, y + h), color, 3)
+        # 繪製文字
         frame = put_chinese_text(frame, name, (x + 10, y + h - 15 - FONT_SIZE // 2), FONT_PATHS, FONT_SIZE, (255, 255, 255))
         
     return frame
@@ -884,6 +890,39 @@ def put_chinese_text(frame, text, position, font_paths, font_size, color):
     
     draw.text(position, text, font=font, fill=(color[2], color[1], color[0])) # OpenCV BGR to PIL RGB
     return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+
+def init_four_buttons(current_scale_idx, menu_visible):
+    """初始化底部按鈕：左右貼邊，中間居中"""
+    global NAV_BTN_LEFT_RECT, NAV_BTN_RIGHT_RECT, BASE_ZONES
+    
+    # 參數設定
+    btn_w = 200
+    btn_h = 100
+    margin_side = 20  # 距離螢幕左右邊界的距離
+    margin_bottom = 30
+    btn_y = CAP_HEIGHT - btn_h - margin_bottom
+
+    # 1. 左側按鈕 (貼左)
+    NAV_BTN_LEFT_RECT = (margin_side, btn_y, btn_w, btn_h)
+    
+    # 2. 右側按鈕 (貼右)
+    NAV_BTN_RIGHT_RECT = (CAP_WIDTH - btn_w - margin_side, btn_y, btn_w, btn_h)
+
+    # 3. 中間的系統按鈕 (結束、開始)，計算置中位置
+    gap = 20
+    # 兩個按鈕寬度 + 間距
+    total_center_width = btn_w * 2 + gap
+    center_start_x = (CAP_WIDTH - total_center_width) // 2
+    
+    BASE_ZONES = [
+        (center_start_x, btn_y, btn_w, btn_h, EXIT_LABEL),
+        (center_start_x + btn_w + gap, btn_y, btn_w, btn_h, SHOW_MENU_LABEL),
+    ]
+    
+    # 組合：[左] + [中] + [右]
+    zones = swap_bottom_to_instruments(BASE_ZONES, current_scale_idx)
+    zones = ensure_toggle_label(zones, menu_visible)
+    return zones
 
 # --- 攝影機選擇函式 ---
 def select_camera():
@@ -971,32 +1010,6 @@ def main():
     print("攝影機已成功啟動！")
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAP_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAP_HEIGHT)
-    
-    global NAV_BTN_LEFT_RECT, NAV_BTN_RIGHT_RECT, BASE_ZONES
-    
-    # 1. 設定按鈕外觀 (這裡數值改大)
-    btn_w = 220       # 寬度：建議改為 200 ~ 240
-    btn_h = 100       # 高度：建議改為 100 ~ 120
-    gap = 30          # 按鈕間距
-    margin_bottom = 30 # 離底部距離 (稍微貼底一點，讓出中間操作區)
-    
-    # 2. 計算起始 X 座標 (程式會自動重新算置中，不用改公式)
-    total_width = (btn_w * 4) + (gap * 3)
-    start_x = (CAP_WIDTH - total_width) // 2
-    btn_y = CAP_HEIGHT - btn_h - margin_bottom
-
-    # 3. 計算四個位置的座標
-    # 位置 0: 最左側 (上一頁)
-    NAV_BTN_LEFT_RECT = (start_x, btn_y, btn_w, btn_h)
-
-    # 位置 1 & 2: 中間功能鍵
-    BASE_ZONES = [
-        (start_x + (btn_w + gap) * 1, btn_y, btn_w, btn_h, EXIT_LABEL),      # 中左
-        (start_x + (btn_w + gap) * 2, btn_y, btn_w, btn_h, SHOW_MENU_LABEL), # 中右
-    ]
-
-    # 位置 3: 最右側 (下一頁)
-    NAV_BTN_RIGHT_RECT = (start_x + (btn_w + gap) * 3, btn_y, btn_w, btn_h)
 
     # 介面狀態：預設隱藏上方五個功能區塊
     menu_visible = False
@@ -1004,7 +1017,11 @@ def main():
     current_timbre_idx = 0
     current_top_names = current_preset["names"]
     top_zone_cache = build_top_zones(current_top_names)
-    COMMAND_ZONES = ensure_toggle_label(BASE_ZONES.copy(), menu_visible)
+
+    # 呼叫函式來初始化 COMMAND_ZONES
+    COMMAND_ZONES = init_four_buttons(current_scale_idx, menu_visible)
+    
+    # (接下來的 zone_thresholds 等維持原樣)
     zone_thresholds = build_zone_thresholds(COMMAND_ZONES)
     window_origin = {}
     previous_hand_points = {}
@@ -1062,8 +1079,15 @@ def main():
 
 
     print("校準完成，可以開始操作！")
+
+    COMMAND_ZONES = swap_bottom_to_instruments(COMMAND_ZONES, current_scale_idx)
+    
+    # 確保 toggle 文字正確 (例如 "開始" vs "收起功能")
+    COMMAND_ZONES = ensure_toggle_label(COMMAND_ZONES, menu_visible)
+
     zone_accumulators = [0] * len(COMMAND_ZONES)
     feedback_timers = [0] * len(COMMAND_ZONES)
+    zone_thresholds = build_zone_thresholds(COMMAND_ZONES) # 記得重新建立閾值
 
     # 階段四：主偵測迴圈
     while True:
@@ -1122,8 +1146,13 @@ def main():
                     mp_drawing_styles.get_default_hand_landmarks_style(),
                     mp_drawing_styles.get_default_hand_connections_style())
 
-        # --- 新增：處理視覺回饋狀態，用於動態著色 ---
+        # 自動補齊 feedback_timers 長度，防止 IndexError
+        if len(feedback_timers) < len(COMMAND_ZONES):
+            feedback_timers.extend([0] * (len(COMMAND_ZONES) - len(feedback_timers)))
+
+        # 處理視覺回饋狀態，用於動態著色
         active_feedback = [False] * len(feedback_timers)
+        
         for i, start_time in enumerate(feedback_timers):
             if start_time > 0:
                 elapsed_time = time.time() - start_time
@@ -1174,32 +1203,35 @@ def main():
                 if name == EXIT_LABEL:
                     exit_requested = True
                 elif name in (SHOW_MENU_LABEL, HIDE_MENU_LABEL):
-                    instrument_swap_requested = True
+                    menu_toggle_requested = True
                     toggle_beep_requested = True
 
                 elif name == current_prev_label:
                     # 索引減 1 (循環)
                     current_scale_idx = (current_scale_idx - 1 + len(SCALE_PRESETS)) % len(SCALE_PRESETS)
-                    
                     # 重新建構上方音階 與 底部按鈕
                     (current_top_names, top_zone_cache, COMMAND_ZONES, 
                      zone_accumulators, feedback_timers, zone_thresholds) = rebuild_top_for_preset(
                         current_scale_idx, menu_visible, COMMAND_ZONES
                     )
-                    # 重要：立即更新底部按鈕的文字 (不然會停留在舊的)
+                    # 更新底部按鈕
                     COMMAND_ZONES = swap_bottom_to_instruments(COMMAND_ZONES, current_scale_idx)
+                    # 強制檢查並修正按鈕文字 (開始 -> 收起功能)
+                    COMMAND_ZONES = ensure_toggle_label(COMMAND_ZONES, menu_visible)
                     zones_dirty = True
                 elif name == current_next_label:
                     # 索引加 1 (循環)
                     current_scale_idx = (current_scale_idx + 1) % len(SCALE_PRESETS)
-                    
                     # 重新建構上方音階 與 底部按鈕
                     (current_top_names, top_zone_cache, COMMAND_ZONES, 
                      zone_accumulators, feedback_timers, zone_thresholds) = rebuild_top_for_preset(
                         current_scale_idx, menu_visible, COMMAND_ZONES
                     )
-                    # 重要：立即更新底部按鈕的文字
+                    # 更新底部按鈕
                     COMMAND_ZONES = swap_bottom_to_instruments(COMMAND_ZONES, current_scale_idx)
+                    # 強制檢查並修正按鈕文字 (開始 -> 收起功能)
+                    COMMAND_ZONES = ensure_toggle_label(COMMAND_ZONES, menu_visible)
+                    
                     zones_dirty = True
 
                 elif name == PIANO_LABEL:
@@ -1271,9 +1303,38 @@ def main():
             play_beep_sound()
 
         if menu_toggle_requested:
-            menu_visible, COMMAND_ZONES, top_zone_cache = toggle_menu_visibility(
-                menu_visible, COMMAND_ZONES, top_zone_cache, current_top_names
-            )
+            # 切換狀態
+            menu_visible = not menu_visible
+            
+            if menu_visible:
+                # 【模式 A：已開始 (演奏模式)】
+                # 目標：底部顯示 [ < 上一個 ]   [ 結束程式 ]   [ 下一個 > ]
+                
+                # 1. 計算中間「結束按鈕」的置中位置
+                btn_w = 220
+                btn_h = 100
+                margin_bottom = 30
+                
+                # 讓結束按鈕絕對置中
+                center_x = (CAP_WIDTH - btn_w) // 2
+                btn_y = CAP_HEIGHT - btn_h - margin_bottom
+                center_exit_btn = (center_x, btn_y, btn_w, btn_h, EXIT_LABEL)
+
+                # 2. 準備左右按鈕 (使用全域變數的座標)
+                prev_label, next_label = get_nav_labels(current_scale_idx)
+                nav_left = (*NAV_BTN_LEFT_RECT, prev_label)
+                nav_right = (*NAV_BTN_RIGHT_RECT, next_label)
+
+                # 3. 組合所有按鈕：左 + 中(結束) + 右 + 上方樂器
+                COMMAND_ZONES = [nav_left, center_exit_btn, nav_right] + top_zone_cache
+                
+            else:
+                # 【模式 B：已結束 (主選單模式)】
+                COMMAND_ZONES = init_four_buttons(current_scale_idx, menu_visible)
+                # 加上上方樂器顯示
+                COMMAND_ZONES += top_zone_cache
+            
+            # 4. 重置相關狀態
             zone_accumulators = [0] * len(COMMAND_ZONES)
             feedback_timers = [0] * len(COMMAND_ZONES)
             zone_thresholds = build_zone_thresholds(COMMAND_ZONES)
@@ -1363,8 +1424,11 @@ def main():
             ambient_play_obj = None
 
         zone_colors = []
-        for zone, v in zip(COMMAND_ZONES, zone_velocities):
-            name = zone[4] # 取得區塊名稱
+        for i, zone in enumerate(COMMAND_ZONES):
+            # 1. 安全取得速度：如果 zone_velocities 長度跟不上新的 zones，就預設為 0.0
+            v = zone_velocities[i] if i < len(zone_velocities) else 0.0
+            
+            name = zone[4]
             
             if name in TOP_ACTION_ALL:
                 base = COLOR_TOP_NOTE
