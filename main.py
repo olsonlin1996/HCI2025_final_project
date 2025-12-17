@@ -52,14 +52,12 @@ VIOLIN_LABEL = "小提琴"
 WINDOWS_LABEL = "Windows"
 TOP_ACTION_NAMES_PIANO = ["鋼琴 do", "鋼琴 re", "鋼琴 mi", "鋼琴 fa", "鋼琴 so"]
 TOP_ACTION_NAMES_VIOLIN = ["小提琴 do", "小提琴 re", "小提琴 mi", "小提琴 fa", "小提琴 so"]
-TOP_ACTION_NAMES_WINDOWS = ["Windows do", "Windows re", "Windows mi", "Windows fa", "Windows so"]
 TOP_ACTION_NAMES_CHINESE = ["中國 宮", "中國 商", "中國 角", "中國 徵", "中國 羽"]
 TOP_ACTION_NAMES_RITSU = ["律 一越", "律 斷金", "律 平調", "律 勝絹", "律 神仙"]
 TOP_ACTION_NAMES_RYO = ["呂 黃鐘", "呂 太食", "呂 夾鐘", "呂 仲呂", "呂 無射"]
 TOP_ACTION_ALL = (
     TOP_ACTION_NAMES_PIANO
     + TOP_ACTION_NAMES_VIOLIN
-    + TOP_ACTION_NAMES_WINDOWS
     + TOP_ACTION_NAMES_CHINESE
     + TOP_ACTION_NAMES_RITSU
     + TOP_ACTION_NAMES_RYO
@@ -109,11 +107,6 @@ TOP_ACTION_FREQS = {
     "mi": 330,
     "fa": 349,
     "so": 392,
-    "Windows do": 262,
-    "Windows re": 294,
-    "Windows mi": 330,
-    "Windows fa": 349,
-    "Windows so": 392,
 }
 SCALE_PRESETS = [
     {
@@ -168,7 +161,7 @@ TIMBRE_MODE_LABEL = "音色模式"
 ACTION_NOTE_KEYS = {}
 TOP_ACTION_SOUNDS = {}
 TOP_ZONE_WIDTH = 200
-TOP_ZONE_HEIGHT = 100
+TOP_ZONE_HEIGHT = 280
 TOP_ZONE_START_Y = 0  # 貼齊上緣
 COMMAND_ZONES = []
 AMBIENT_SOUND_FILES = [
@@ -190,6 +183,18 @@ BEEP_WAVE = None
 BEEP_WARNING_SHOWN = False
 IS_WINDOWS = platform.system() == "Windows"
 
+def get_nav_labels(current_idx):
+    """計算並回傳 (上一個樂器名稱, 下一個樂器名稱)"""
+    n = len(SCALE_PRESETS)
+    # 使用 % n 確保循環 (0 的前一個變成最後一個)
+    prev_idx = (current_idx - 1 + n) % n
+    next_idx = (current_idx + 1) % n
+    
+    # 加箭頭讓視覺更清楚
+    prev_label = f"< {SCALE_PRESETS[prev_idx]['label']}"
+    next_label = f"{SCALE_PRESETS[next_idx]['label']} >"
+    
+    return prev_label, next_label
 
 def build_top_zones(top_names=None):
     """
@@ -257,10 +262,11 @@ def toggle_menu_visibility(menu_visible, zones, top_zone_cache, top_names):
 
 
 BASE_ZONES = [
-    (50, 570, 200, 100, EXIT_LABEL),
-    (300, 570, 200, 100, SCALE_CYCLE_LABEL),
-    (550, 570, 200, 100, TIMBRE_MODE_LABEL),
-    (1030, 570, 200, 100, SHOW_MENU_LABEL),
+    # (x, y, w, h, name)
+    (50, 520, 200, 200, EXIT_LABEL),
+    (300, 520, 200, 200, SCALE_CYCLE_LABEL),
+    (550, 520, 200, 200, TIMBRE_MODE_LABEL),
+    (1030, 520, 200, 200, SHOW_MENU_LABEL),
 ]
 COMMAND_ZONES = ensure_toggle_label(BASE_ZONES.copy(), menu_visible=False)
 register_scale_sounds()
@@ -771,20 +777,20 @@ def rebuild_top_for_preset(
     )
 
 
-def build_instrument_bottom_zones():
-    """Create piano/violin zones at reserved bottom positions."""
-    violin_zone = (50, 460, 200, 100, VIOLIN_LABEL)
-    piano_zone = (1030, 460, 200, 100, PIANO_LABEL)
-    return [violin_zone, piano_zone]
+def build_instrument_bottom_zones(prev_label, next_label):
+    """建立底部導航按鈕，顯示動態的樂器名稱"""
+    left_zone = (50, 280, 200, 200, prev_label)
+    right_zone = (1030, 280, 200, 200, next_label)
+    return [left_zone, right_zone]
 
-
-def swap_bottom_to_instruments(zones):
-    """Ensure piano/violin selectors are present without removing controls."""
-    if any(z[4] == PIANO_LABEL for z in zones) and any(z[4] == VIOLIN_LABEL for z in zones):
-        return zones
-
-    kept = [z for z in zones if z[4] not in (PIANO_LABEL, VIOLIN_LABEL)]
-    return kept + build_instrument_bottom_zones()
+def swap_bottom_to_instruments(zones, current_idx):
+    """確保底部是導航按鈕，並更新為正確的文字"""
+    prev_label, next_label = get_nav_labels(current_idx)
+    
+    base_names = [z[4] for z in BASE_ZONES]
+    kept = [z for z in zones if z[4] in base_names or z[4] in TOP_ACTION_ALL]
+    
+    return kept + build_instrument_bottom_zones(prev_label, next_label)
 GET_READY_SECONDS = 3    # 按下按鍵後的準備時間
 CALIBRATION_SECONDS = 3  # 正式校準時間
 VAR_THRESHOLD = 75
@@ -1099,28 +1105,44 @@ def main():
             if zone_accumulators[i] > zone_threshold:
                 print(f"指令觸發: {name}")
                 feedback_timers[i] = time.time()
+                
+                current_prev_label, current_next_label = get_nav_labels(current_scale_idx)
 
                 if name == EXIT_LABEL:
                     exit_requested = True
                 elif name in (SHOW_MENU_LABEL, HIDE_MENU_LABEL):
                     instrument_swap_requested = True
                     toggle_beep_requested = True
+
+                elif name == current_prev_label:
+                    # 索引減 1 (循環)
+                    current_scale_idx = (current_scale_idx - 1 + len(SCALE_PRESETS)) % len(SCALE_PRESETS)
+                    
+                    # 重新建構上方音階 與 底部按鈕
+                    (current_top_names, top_zone_cache, COMMAND_ZONES, 
+                     zone_accumulators, feedback_timers, zone_thresholds) = rebuild_top_for_preset(
+                        current_scale_idx, menu_visible, COMMAND_ZONES
+                    )
+                    # 重要：立即更新底部按鈕的文字 (不然會停留在舊的)
+                    COMMAND_ZONES = swap_bottom_to_instruments(COMMAND_ZONES, current_scale_idx)
+                    zones_dirty = True
+                elif name == current_next_label:
+                    # 索引加 1 (循環)
+                    current_scale_idx = (current_scale_idx + 1) % len(SCALE_PRESETS)
+                    
+                    # 重新建構上方音階 與 底部按鈕
+                    (current_top_names, top_zone_cache, COMMAND_ZONES, 
+                     zone_accumulators, feedback_timers, zone_thresholds) = rebuild_top_for_preset(
+                        current_scale_idx, menu_visible, COMMAND_ZONES
+                    )
+                    # 重要：立即更新底部按鈕的文字
+                    COMMAND_ZONES = swap_bottom_to_instruments(COMMAND_ZONES, current_scale_idx)
+                    zones_dirty = True
+
                 elif name == PIANO_LABEL:
                     piano_top_requested = True
-                    window_origin[i] = PIANO_LABEL
-                    COMMAND_ZONES[i] = (x, y, w, h, WINDOWS_LABEL)
-                    zones_dirty = True
                 elif name == VIOLIN_LABEL:
                     violin_top_requested = True
-                    window_origin[i] = VIOLIN_LABEL
-                    COMMAND_ZONES[i] = (x, y, w, h, WINDOWS_LABEL)
-                    zones_dirty = True
-                elif name == WINDOWS_LABEL:
-                    windows_top_requested = True
-                    original = window_origin.get(i, PIANO_LABEL)
-                    COMMAND_ZONES[i] = (x, y, w, h, original)
-                    window_origin.pop(i, None)
-                    zones_dirty = True
                 elif name == SCALE_CYCLE_LABEL:
                     scale_cycle_requested = True
                 elif name == TIMBRE_MODE_LABEL:
@@ -1201,7 +1223,7 @@ def main():
                 menu_visible, COMMAND_ZONES, top_zone_cache = toggle_menu_visibility(
                     menu_visible, COMMAND_ZONES, top_zone_cache, current_top_names
                 )
-            COMMAND_ZONES = swap_bottom_to_instruments(COMMAND_ZONES)
+            COMMAND_ZONES = swap_bottom_to_instruments(COMMAND_ZONES, current_scale_idx)
             window_origin = {}
             zone_accumulators = [0] * len(COMMAND_ZONES)
             feedback_timers = [0] * len(COMMAND_ZONES)
