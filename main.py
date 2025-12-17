@@ -50,7 +50,6 @@ HIDE_MENU_LABEL = "收起功能"
 PIANO_LABEL = "鋼琴"
 VIOLIN_LABEL = "小提琴"
 WINDOWS_LABEL = "Windows"
-TOP_ACTION_NAMES_DEFAULT = ["do", "re", "mi", "fa", "so"]
 TOP_ACTION_NAMES_PIANO = ["鋼琴 do", "鋼琴 re", "鋼琴 mi", "鋼琴 fa", "鋼琴 so"]
 TOP_ACTION_NAMES_VIOLIN = ["小提琴 do", "小提琴 re", "小提琴 mi", "小提琴 fa", "小提琴 so"]
 TOP_ACTION_NAMES_WINDOWS = ["Windows do", "Windows re", "Windows mi", "Windows fa", "Windows so"]
@@ -58,8 +57,7 @@ TOP_ACTION_NAMES_CHINESE = ["中國 宮", "中國 商", "中國 角", "中國 �
 TOP_ACTION_NAMES_RITSU = ["律 一越", "律 斷金", "律 平調", "律 勝絹", "律 神仙"]
 TOP_ACTION_NAMES_RYO = ["呂 黃鐘", "呂 太食", "呂 夾鐘", "呂 仲呂", "呂 無射"]
 TOP_ACTION_ALL = (
-    TOP_ACTION_NAMES_DEFAULT
-    + TOP_ACTION_NAMES_PIANO
+    TOP_ACTION_NAMES_PIANO
     + TOP_ACTION_NAMES_VIOLIN
     + TOP_ACTION_NAMES_WINDOWS
     + TOP_ACTION_NAMES_CHINESE
@@ -182,7 +180,7 @@ AMBIENT_TARGET_GAIN = 0.85
 RELAX_VELOCITY_THRESHOLD = 40.0
 RELAX_EXIT_VELOCITY = 65.0
 RELAX_ACCUM_THRESHOLD = 4.0
-RELAX_TRIGGER_SECONDS = 5.0
+RELAX_TRIGGER_SECONDS = 10.0
 GAIN_FADE_SECONDS = 2.5
 VISUAL_DIM_MAX = 0.45
 RELAX_INSTRUMENT_GAIN = 0.35
@@ -198,7 +196,7 @@ def build_top_zones(top_names=None):
     建立上方五個區塊，左右貼齊邊界並平均分開。
     左側第一個 x=0，右側最後一個 x=CAP_WIDTH - W，中間等距分布。
     """
-    names = top_names if top_names is not None else TOP_ACTION_NAMES_DEFAULT
+    names = top_names if top_names is not None else TOP_ACTION_NAMES_PIANO
     num = len(names)
     if num <= 1:
         xs = [0]
@@ -848,21 +846,39 @@ def put_chinese_text(frame, text, position, font_paths, font_size, color):
 def select_camera():
     print("正在偵測可用的攝影機...")
     available_cameras = []
-    for i in range(5): # 嘗試檢查 0-4 的索引
+    # 掃描 0-4
+    for i in range(5):
         cap_test = cv2.VideoCapture(i)
         if cap_test.isOpened():
             available_cameras.append(i)
-
         cap_test.release()
     
     if not available_cameras:
         print("錯誤：找不到任何可用的攝影機。")
         return None
     
-    if len(available_cameras) == 1:
-        print(f"自動選擇唯一的攝影機: {available_cameras[0]}")
-        return available_cameras[0]
+    # --- 自動選擇邏輯 ---
+    # 策略：優先嘗試列表中的「最後一個」攝影機 (通常外接鏡頭 index 較大)
+    suggested_idx = available_cameras[-1]
+    print(f"自動嘗試連接攝影機 {suggested_idx} (通常為外接鏡頭)...")
 
+    # 進行快速測試：嘗試開啟並讀取一幀畫面
+    cap = cv2.VideoCapture(suggested_idx)
+    is_working = False
+    if cap.isOpened():
+        # 嘗試讀取一幀，確認真的能運作
+        ret, _ = cap.read()
+        if ret:
+            is_working = True
+    cap.release()
+
+    if is_working:
+        print(f"成功連接攝影機 {suggested_idx}！")
+        return suggested_idx
+    else:
+        print(f"自動連接攝影機 {suggested_idx} 失敗，轉為手動選擇模式。")
+
+    # --- 手動選擇備案 ---
     print("請選擇要使用的攝影機：")
     for cam_idx in available_cameras:
         print(f"  - 輸入 {cam_idx} 選擇攝影機 {cam_idx}")
@@ -958,9 +974,8 @@ def main():
         
         # 顯示操作提示
         cv2.putText(frame, "Press 's' to start calibration", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-        cv2.putText(frame, "Press 'e' to edit layout", (50, 90), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-        cv2.putText(frame, "Press 'q' to quit", (50, 130), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-        cv2.putText(frame, "Low motion will enter Relax mode (ambient)", (50, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 200), 2)
+        cv2.putText(frame, "Press 'q' to quit", (50, 90), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+        cv2.putText(frame, "Low motion will enter Relax mode (ambient)", (50, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 200), 2)
 
         frame = draw_ui(frame, COMMAND_ZONES, None, zone_thresholds)
         cv2.imshow(window_name, frame)
@@ -975,16 +990,6 @@ def main():
             cap.release()
             cv2.destroyAllWindows()
             return
-
-        elif key == ord('e'):
-            COMMAND_ZONES = run_edit_mode(cap, COMMAND_ZONES, window_name, BOX_COLOR)
-            if menu_visible:
-                top_zone_cache = [z for z in COMMAND_ZONES if z[4] in TOP_ACTION_ALL] or top_zone_cache
-            else:
-                COMMAND_ZONES = [z for z in COMMAND_ZONES if z[4] not in TOP_ACTION_ALL]
-            COMMAND_ZONES = ensure_toggle_label(COMMAND_ZONES, menu_visible)
-            zone_thresholds = build_zone_thresholds(COMMAND_ZONES)
-            # 繼續外層迴圈，等待 's' 或 'q'
 
 
     print("校準完成，可以開始操作！")
