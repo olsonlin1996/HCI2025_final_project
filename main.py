@@ -36,14 +36,18 @@ FONT_PATHS = [
     "C:/Windows/Fonts/mingliu.ttc",                   # Windows 細明體
     "msjh.ttf"
 ]
-FONT_SIZE = 20
+FONT_SIZE = 30
 _FONT_CACHE = {}
 _FONT_WARNING_SHOWN = False
 
 # --- 參數設定 ---
 CAP_WIDTH = 1280
 CAP_HEIGHT = 720
-BOX_COLOR = (255, 0, 255) # 亮粉色
+BOX_COLOR = (182, 175, 164),  # 霧霾藍 (Haze Blue)
+COLOR_TOP_NOTE = (166, 149, 158)  # 灰紫 (Grey Purple)
+COLOR_NAV_BTN  = (122, 157, 138)  # 鼠尾草綠 (Sage Green)
+COLOR_SYS_BTN  = (146, 166, 186)  # 礦石灰 (Mineral Grey)
+
 EXIT_LABEL = "結束程式 (Exit)"
 SHOW_MENU_LABEL = "開始"
 HIDE_MENU_LABEL = "收起功能"
@@ -156,12 +160,11 @@ TIMBRE_LAYERS = [
     {"key": "bell", "label": "Bell", "dir": BELL_SOUND_DIR},
 ]
 TIMBRE_MODES = ["單一音色", "水平漸層"]
-SCALE_CYCLE_LABEL = "切換音階"
 TIMBRE_MODE_LABEL = "音色模式"
 ACTION_NOTE_KEYS = {}
 TOP_ACTION_SOUNDS = {}
 TOP_ZONE_WIDTH = 200
-TOP_ZONE_HEIGHT = 280
+TOP_ZONE_HEIGHT = 540
 TOP_ZONE_START_Y = 0  # 貼齊上緣
 COMMAND_ZONES = []
 AMBIENT_SOUND_FILES = [
@@ -263,10 +266,9 @@ def toggle_menu_visibility(menu_visible, zones, top_zone_cache, top_names):
 
 BASE_ZONES = [
     # (x, y, w, h, name)
-    (50, 520, 200, 200, EXIT_LABEL),
-    (300, 520, 200, 200, SCALE_CYCLE_LABEL),
-    (550, 520, 200, 200, TIMBRE_MODE_LABEL),
-    (1030, 520, 200, 200, SHOW_MENU_LABEL),
+    (40, 560, 200, 140, EXIT_LABEL),
+    (790, 560, 200, 140, TIMBRE_MODE_LABEL),
+    (1040, 560, 200, 140, SHOW_MENU_LABEL),
 ]
 COMMAND_ZONES = ensure_toggle_label(BASE_ZONES.copy(), menu_visible=False)
 register_scale_sounds()
@@ -278,16 +280,21 @@ def compute_velocity_factor(velocity: float):
     normalized = max(0.0, min(velocity / 400.0, 1.0))
     return normalized
 
-
-def velocity_to_color(velocity: float):
-    """Map velocity to a visible color for UI feedback."""
+def velocity_to_color(velocity: float, base_color):
+    """
+    將速度映射為顏色，從指定的 base_color 漸變到亮黃色。
+    [Fix]: 強制將 numpy 數值轉為 Python int，避免 OpenCV 報錯。
+    """
     factor = compute_velocity_factor(velocity)
-    # Blend between the base magenta and bright yellow as speed increases.
-    base_color = np.array(BOX_COLOR)
-    hot_color = np.array([255, 255, 0])
-    blended = (base_color * (1 - factor) + hot_color * factor).astype(int)
+    
+    base_arr = np.array(base_color)
+    hot_arr = np.array([255, 255, 0]) 
+    
+    # 計算漸層顏色
+    blended = (base_arr * (1 - factor) + hot_arr * factor).astype(int)
+    
+    # [關鍵修正]: 這裡必須用 int(c) 強制轉型，不能只用 tuple(blended)
     return tuple(int(c) for c in blended)
-
 
 def clamp01(value: float):
     return max(0.0, min(value, 1.0))
@@ -776,11 +783,15 @@ def rebuild_top_for_preset(
         zone_thresholds,
     )
 
+# --- 在 main 計算出的左右按鈕座標，將存放在這裡供全域使用 ---
+NAV_BTN_LEFT_RECT = (0, 0, 0, 0)  # (x, y, w, h)
+NAV_BTN_RIGHT_RECT = (0, 0, 0, 0) # (x, y, w, h)
 
 def build_instrument_bottom_zones(prev_label, next_label):
-    """建立底部導航按鈕，顯示動態的樂器名稱"""
-    left_zone = (50, 280, 200, 200, prev_label)
-    right_zone = (1030, 280, 200, 200, next_label)
+    """建立底部導航按鈕，使用 main 計算好的動態座標"""
+    # 使用全域變數中的座標
+    left_zone = (*NAV_BTN_LEFT_RECT, prev_label)
+    right_zone = (*NAV_BTN_RIGHT_RECT, next_label)
     return [left_zone, right_zone]
 
 def swap_bottom_to_instruments(zones, current_idx):
@@ -800,21 +811,47 @@ CAMERA_WAIT_TIMEOUT = 10 # 等待攝影機啟動的最長時間（秒）
 def draw_ui(frame, zones, accumulators=None, threshold=None, zone_colors=None):
     # 偵錯：重新排序繪圖順序，確保框線總是可見
     for i, (x, y, w, h, name) in enumerate(zones):
-        color = zone_colors[i] if zone_colors else BOX_COLOR
+        # 取得原始顏色
+        raw_color = zone_colors[i] if zone_colors else BOX_COLOR
+        
+        # 【修正點 1：自動解包多餘的層級】
+        # 如果 raw_color 裡面的第一個元素竟然還是 list 或 tuple (例如 [[255,0,0]])，就往內剝一層
+        if isinstance(raw_color, (list, tuple)) and len(raw_color) > 0 and isinstance(raw_color[0], (list, tuple)):
+            raw_color = raw_color[0]
+            
+        # 【修正點 2：強制轉型為標準整數】
+        # 確保顏色是標準 tuple (int, int, int)
+        if isinstance(raw_color, (list, tuple)):
+            try:
+                color = tuple(int(c) for c in raw_color)
+            except TypeError:
+                # 萬一還是失敗，回退到預設顏色，避免程式崩潰 (Fallback)
+                print(f"[Warning] Color format error at index {i}: {raw_color}, using default Green.")
+                color = (0, 255, 0)
+        else:
+            # 處理單一數值的情況
+            v = int(raw_color)
+            color = (v, v, v)
+
+        # 確保座標是標準整數
+        x, y, w, h = int(x), int(y), int(w), int(h)
+
+        # --- 以下維持原樣 ---
         # 1. 如果有提供進度，先畫進度條
         if accumulators is not None and threshold is not None:
             # threshold 可以是單一值或對應各區塊的列表
             zone_threshold = threshold[i] if isinstance(threshold, list) else threshold
-            progress = min(accumulators[i] / zone_threshold, 1.0)
-            if progress > 0 and zone_threshold > 0:
-                cv2.rectangle(frame, (x, y), (x + int(w * progress), y + h), color, -1)
+            if zone_threshold > 0:
+                progress = min(accumulators[i] / zone_threshold, 1.0)
+                if progress > 0:
+                    cv2.rectangle(frame, (x, y), (x + int(w * progress), y + h), color, -1)
 
         # 2. 接著畫框線
-        cv2.rectangle(frame, (x, y), (x+w, y+h), color, 3)
+        cv2.rectangle(frame, (x, y), (x + w, y + h), color, 3)
         
-        # 3. 最後畫文字，確保文字在最上層
-        # 使用 put_chinese_text 函式來顯示中文
+        # 3. 最後畫文字
         frame = put_chinese_text(frame, name, (x + 10, y + h - 15 - FONT_SIZE // 2), FONT_PATHS, FONT_SIZE, (255, 255, 255))
+        
     return frame
 
 def put_chinese_text(frame, text, position, font_paths, font_size, color):
@@ -934,6 +971,32 @@ def main():
     print("攝影機已成功啟動！")
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAP_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAP_HEIGHT)
+    
+    global NAV_BTN_LEFT_RECT, NAV_BTN_RIGHT_RECT, BASE_ZONES
+    
+    # 1. 設定按鈕外觀 (這裡數值改大)
+    btn_w = 220       # 寬度：建議改為 200 ~ 240
+    btn_h = 100       # 高度：建議改為 100 ~ 120
+    gap = 30          # 按鈕間距
+    margin_bottom = 30 # 離底部距離 (稍微貼底一點，讓出中間操作區)
+    
+    # 2. 計算起始 X 座標 (程式會自動重新算置中，不用改公式)
+    total_width = (btn_w * 4) + (gap * 3)
+    start_x = (CAP_WIDTH - total_width) // 2
+    btn_y = CAP_HEIGHT - btn_h - margin_bottom
+
+    # 3. 計算四個位置的座標
+    # 位置 0: 最左側 (上一頁)
+    NAV_BTN_LEFT_RECT = (start_x, btn_y, btn_w, btn_h)
+
+    # 位置 1 & 2: 中間功能鍵
+    BASE_ZONES = [
+        (start_x + (btn_w + gap) * 1, btn_y, btn_w, btn_h, EXIT_LABEL),      # 中左
+        (start_x + (btn_w + gap) * 2, btn_y, btn_w, btn_h, SHOW_MENU_LABEL), # 中右
+    ]
+
+    # 位置 3: 最右側 (下一頁)
+    NAV_BTN_RIGHT_RECT = (start_x + (btn_w + gap) * 3, btn_y, btn_w, btn_h)
 
     # 介面狀態：預設隱藏上方五個功能區塊
     menu_visible = False
@@ -1143,8 +1206,6 @@ def main():
                     piano_top_requested = True
                 elif name == VIOLIN_LABEL:
                     violin_top_requested = True
-                elif name == SCALE_CYCLE_LABEL:
-                    scale_cycle_requested = True
                 elif name == TIMBRE_MODE_LABEL:
                     timbre_cycle_requested = True
                 elif name in TOP_ACTION_ALL:
@@ -1301,7 +1362,20 @@ def main():
             ambient_play_obj.stop()
             ambient_play_obj = None
 
-        zone_colors = [velocity_to_color(v) for v in zone_velocities]
+        zone_colors = []
+        for zone, v in zip(COMMAND_ZONES, zone_velocities):
+            name = zone[4] # 取得區塊名稱
+            
+            if name in TOP_ACTION_ALL:
+                base = COLOR_TOP_NOTE
+            elif name.startswith("<") or name.endswith(">"):
+                base = COLOR_NAV_BTN
+            else:
+                base = COLOR_SYS_BTN
+            
+            zone_colors.append(velocity_to_color(v, base))
+
+        # 繪圖
         frame = draw_ui(frame, COMMAND_ZONES, zone_accumulators, zone_thresholds, zone_colors=zone_colors)
 
         overlay = render_visual_overlay(visual_state)
