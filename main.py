@@ -48,135 +48,124 @@ COLOR_TOP_NOTE = (166, 149, 158)  # 灰紫 (Grey Purple)
 COLOR_NAV_BTN  = (122, 157, 138)  # 鼠尾草綠 (Sage Green)
 COLOR_SYS_BTN  = (146, 166, 186)  # 礦石灰 (Mineral Grey)
 
+# --- 1. 修改參數與音階定義 ---
 EXIT_LABEL = "結束程式 (Exit)"
 SHOW_MENU_LABEL = "開始"
 HIDE_MENU_LABEL = "收起功能"
-PIANO_LABEL = "鋼琴"
-VIOLIN_LABEL = "小提琴"
-WINDOWS_LABEL = "Windows"
-TOP_ACTION_NAMES_PIANO = ["鋼琴 do", "鋼琴 re", "鋼琴 mi", "鋼琴 fa", "鋼琴 so"]
-TOP_ACTION_NAMES_VIOLIN = ["小提琴 do", "小提琴 re", "小提琴 mi", "小提琴 fa", "小提琴 so"]
-TOP_ACTION_NAMES_CHINESE = ["中國 宮", "中國 商", "中國 角", "中國 徵", "中國 羽"]
-TOP_ACTION_NAMES_RITSU = ["律 一越", "律 斷金", "律 平調", "律 勝絹", "律 神仙"]
-TOP_ACTION_NAMES_RYO = ["呂 黃鐘", "呂 太食", "呂 夾鐘", "呂 仲呂", "呂 無射"]
-TOP_ACTION_ALL = (
-    TOP_ACTION_NAMES_PIANO
-    + TOP_ACTION_NAMES_VIOLIN
-    + TOP_ACTION_NAMES_CHINESE
-    + TOP_ACTION_NAMES_RITSU
-    + TOP_ACTION_NAMES_RYO
-)
+
+# 定義音色資料夾
 PIANO_SOUND_DIR = "piano_sound"
 VIOLIN_SOUND_DIR = "violin_sound"
-HANDPAN_SOUND_DIR = "handpan_sound"
-MARIMBA_SOUND_DIR = "marimba_sound"
-BELL_SOUND_DIR = "bell_sound"
-CHINESE_SOUND_DIR = "chinese_pentatonic_sound"
-RITSU_SOUND_DIR = "japanese_ritsu_sound"
-RYO_SOUND_DIR = "japanese_ryo_sound"
-NOTE_FILENAMES = {
-    "do": "c1.wav",
-    "re": "d1.wav",
-    "mi": "e1.wav",
-    "fa": "f1.wav",
-    "so": "g1.wav",
-    "la": "a1.wav",
-    "ti": "b1.wav",
-    "do3": "c3.wav",
-    "re3": "d3.wav",
-    "mi3": "e3.wav",
-    "fa3": "f3.wav",
-    "so3": "g3.wav",
-    "la3": "a3.wav",
-    "ti3": "b3.wav",
-    "gong": "c1.wav",
-    "shang": "d1.wav",
-    "jue": "e1.wav",
-    "zhi": "g1.wav",
-    "yu": "a1.wav",
-    "ritsu1": "d1.wav",
-    "ritsu2": "e1.wav",
-    "ritsu3": "g1.wav",
-    "ritsu4": "a1.wav",
-    "ritsu5": "b1.wav",
-    "ryo1": "c1.wav",
-    "ryo2": "d1.wav",
-    "ryo3": "f1.wav",
-    "ryo4": "g1.wav",
-    "ryo5": "a1.wav",
+
+# 定義音階名稱列表
+NAMES_CHINESE = ["宮 (Do)", "商 (Re)", "角 (Mi)", "徵 (So)", "羽 (La)"]
+NAMES_RITSU = ["律 一 (Do)", "律 二 (Re)", "律 三 (Fa)", "律 四 (So)", "律 五 (La)"]
+NAMES_RYO = ["呂 一 (Re)", "呂 二 (Mi)", "呂 三 (So)", "呂 四 (La)", "呂 五 (Ti)"]
+
+# 整合所有名稱
+TOP_ACTION_ALL = tuple(NAMES_CHINESE + NAMES_RITSU + NAMES_RYO)
+
+# 定義音檔對照表：將唱名映射到標準音名檔案
+# 鋼琴專用檔名 (結尾是 1)
+NOTE_FILES_PIANO = {
+    "do": "c1.wav", "re": "d1.wav", "mi": "e1.wav", "fa": "f1.wav", 
+    "so": "g1.wav", "la": "a1.wav", "ti": "b1.wav",
 }
+
+# 小提琴專用檔名 (結尾是 3)
+NOTE_FILES_VIOLIN = {
+    "do": "c3.wav", "re": "d3.wav", "mi": "e3.wav", "fa": "f3.wav", 
+    "so": "g3.wav", "la": "a3.wav", "ti": "b3.wav",
+}
+
+# 定義頻率 (用於音檔遺失時的 Beep 備用音，對應 C4~B4)
 TOP_ACTION_FREQS = {
-    "do": 262,
-    "re": 294,
-    "mi": 330,
-    "fa": 349,
-    "so": 392,
+    "do": 262, # C4
+    "re": 294, # D4
+    "mi": 330, # E4
+    "fa": 349, # F4
+    "so": 392, # G4
+    "la": 440, # A4
+    "ti": 494  # B4
 }
+
+# 定義 6 種預設集
 SCALE_PRESETS = [
+    # --- 鋼琴系列 (使用 NOTE_FILES_PIANO) ---
     {
-        "key": "piano",
-        "label": "鋼琴五聲",
-        "names": TOP_ACTION_NAMES_PIANO,
-        "note_keys": ["do", "re", "mi", "fa", "so"],
+        "key": "piano_chinese",
+        "label": "[鋼琴] 中國五聲",
+        "names": NAMES_CHINESE,
+        "note_keys": ["do", "re", "mi", "so", "la"],
         "sound_dir": PIANO_SOUND_DIR,
-        "use_beep": False,
+        "file_map": NOTE_FILES_PIANO  # 指定用鋼琴檔名
     },
     {
-        "key": "violin",
-        "label": "小提琴五聲",
-        "names": TOP_ACTION_NAMES_VIOLIN,
-        "note_keys": ["do3", "re3", "mi3", "fa3", "so3"],
+        "key": "piano_ritsu",
+        "label": "[鋼琴] 日本律音階",
+        "names": NAMES_RITSU,
+        "note_keys": ["do", "re", "fa", "so", "la"],
+        "sound_dir": PIANO_SOUND_DIR,
+        "file_map": NOTE_FILES_PIANO
+    },
+    {
+        "key": "piano_ryo",
+        "label": "[鋼琴] 日本呂音階",
+        "names": NAMES_RYO,
+        "note_keys": ["re", "mi", "so", "la", "ti"],
+        "sound_dir": PIANO_SOUND_DIR,
+        "file_map": NOTE_FILES_PIANO
+    },
+    # --- 小提琴系列 (使用 NOTE_FILES_VIOLIN) ---
+    {
+        "key": "violin_chinese",
+        "label": "[小提琴] 中國五聲",
+        "names": NAMES_CHINESE,
+        "note_keys": ["do", "re", "mi", "so", "la"],
         "sound_dir": VIOLIN_SOUND_DIR,
-        "use_beep": False,
+        "file_map": NOTE_FILES_VIOLIN # 指定用小提琴檔名
     },
     {
-        "key": "chinese",
-        "label": "中國五聲",
-        "names": TOP_ACTION_NAMES_CHINESE,
-        "note_keys": ["gong", "shang", "jue", "zhi", "yu"],
-        "sound_dir": CHINESE_SOUND_DIR,
-        "use_beep": False,
+        "key": "violin_ritsu",
+        "label": "[小提琴] 日本律音階",
+        "names": NAMES_RITSU,
+        "note_keys": ["do", "re", "fa", "so", "la"],
+        "sound_dir": VIOLIN_SOUND_DIR,
+        "file_map": NOTE_FILES_VIOLIN
     },
     {
-        "key": "ritsu",
-        "label": "日本律音階",
-        "names": TOP_ACTION_NAMES_RITSU,
-        "note_keys": ["ritsu1", "ritsu2", "ritsu3", "ritsu4", "ritsu5"],
-        "sound_dir": RITSU_SOUND_DIR,
-        "use_beep": False,
-    },
-    {
-        "key": "ryo",
-        "label": "日本呂音階",
-        "names": TOP_ACTION_NAMES_RYO,
-        "note_keys": ["ryo1", "ryo2", "ryo3", "ryo4", "ryo5"],
-        "sound_dir": RYO_SOUND_DIR,
-        "use_beep": False,
+        "key": "violin_ryo",
+        "label": "[小提琴] 日本呂音階",
+        "names": NAMES_RYO,
+        "note_keys": ["re", "mi", "so", "la", "ti"],
+        "sound_dir": VIOLIN_SOUND_DIR,
+        "file_map": NOTE_FILES_VIOLIN
     },
 ]
-TIMBRE_LAYERS = [
-    {"key": "handpan", "label": "Handpan", "dir": HANDPAN_SOUND_DIR},
-    {"key": "marimba", "label": "Marimba", "dir": MARIMBA_SOUND_DIR},
-    {"key": "bell", "label": "Bell", "dir": BELL_SOUND_DIR},
-]
-TIMBRE_MODES = ["單一音色", "水平漸層"]
-TIMBRE_MODE_LABEL = "音色模式"
+
+# 初始化變數
 ACTION_NOTE_KEYS = {}
 TOP_ACTION_SOUNDS = {}
+
+# --- 移除舊的 TIMBRE 定義，直接清空 ---
+TIMBRE_LAYERS = []     
+TIMBRE_MODES = []      
+TIMBRE_MODE_LABEL = ""
+
 TOP_ZONE_WIDTH = 200
 TOP_ZONE_HEIGHT = 540
 TOP_ZONE_START_Y = 0  # 貼齊上緣
 COMMAND_ZONES = []
 AMBIENT_SOUND_FILES = [
-    ("ocean", os.path.join("ambient_sound", "ocean.mp3")),
-    ("wind", os.path.join("ambient_sound", "wind.mp3")),
+    ("ocean", os.path.join("ambient_sound", "ocean.wav")),
+    ("wind", os.path.join("ambient_sound", "wind.wav")),
 ]
 AMBIENT_SOUND_PATH = AMBIENT_SOUND_FILES[0][1]
 AMBIENT_TARGET_GAIN = 0.85
 RELAX_VELOCITY_THRESHOLD = 40.0
 RELAX_EXIT_VELOCITY = 65.0
 RELAX_ACCUM_THRESHOLD = 4.0
-RELAX_TRIGGER_SECONDS = 10.0
+RELAX_TRIGGER_SECONDS = 5.0
 GAIN_FADE_SECONDS = 2.5
 VISUAL_DIM_MAX = 0.45
 RELAX_INSTRUMENT_GAIN = 0.35
@@ -226,18 +215,26 @@ def ensure_toggle_label(zones, menu_visible):
     return updated
 
 
-def register_scale_sounds():
-    """Populate TOP_ACTION_SOUNDS and ACTION_NOTE_KEYS based on presets."""
+def load_active_preset_sounds(preset):
+    """
+    切換樂器時呼叫此函式。
+    它會先「清空」目前的音效表，然後只載入當前預設集 (preset) 的聲音。
+    這樣就不會發生「小提琴覆蓋鋼琴」的問題。
+    """
     TOP_ACTION_SOUNDS.clear()
     ACTION_NOTE_KEYS.clear()
 
-    for preset in SCALE_PRESETS:
-        for display_name, note_key in zip(preset["names"], preset["note_keys"]):
-            ACTION_NOTE_KEYS[display_name] = note_key
-            if preset["sound_dir"]:
-                filename = NOTE_FILENAMES.get(note_key)
-                if filename:
-                    TOP_ACTION_SOUNDS[display_name] = (preset["sound_dir"], filename)
+    # 讀取該預設集專用的檔名表
+    current_file_map = preset["file_map"]
+    
+    for display_name, note_key in zip(preset["names"], preset["note_keys"]):
+        ACTION_NOTE_KEYS[display_name] = note_key
+        
+        if preset["sound_dir"]:
+            filename = current_file_map.get(note_key)
+            if filename:
+                # 登錄音效：名字 -> (資料夾, 檔名)
+                TOP_ACTION_SOUNDS[display_name] = (preset["sound_dir"], filename)
 
 
 def toggle_menu_visibility(menu_visible, zones, top_zone_cache, top_names):
@@ -271,7 +268,6 @@ BASE_ZONES = [
     (1040, 560, 200, 140, SHOW_MENU_LABEL),
 ]
 COMMAND_ZONES = ensure_toggle_label(BASE_ZONES.copy(), menu_visible=False)
-register_scale_sounds()
 
 
 def compute_velocity_factor(velocity: float):
@@ -647,90 +643,105 @@ def normalize_hand_x(hand_x: float):
         return 0.5
     return max(0.0, min(hand_x / CAP_WIDTH, 1.0))
 
-def build_blended_wave(note_key: str, velocity: float, hand_x: float):
-    """Blend multiple layers according to horizontal position."""
-    layer_count = len(TIMBRE_LAYERS)
-    if layer_count == 0:
-        return None
+# def build_blended_wave(note_key: str, velocity: float, hand_x: float):
+#     """Blend multiple layers according to horizontal position."""
+#     layer_count = len(TIMBRE_LAYERS)
+#     if layer_count == 0:
+#         return None
 
-    normalized_x = normalize_hand_x(hand_x)
-    segment = normalized_x * (layer_count - 1)
-    base_idx = int(math.floor(segment))
-    next_idx = min(base_idx + 1, layer_count - 1)
-    mix = segment - base_idx
+#     normalized_x = normalize_hand_x(hand_x)
+#     segment = normalized_x * (layer_count - 1)
+#     base_idx = int(math.floor(segment))
+#     next_idx = min(base_idx + 1, layer_count - 1)
+#     mix = segment - base_idx
 
-    base_info = TIMBRE_LAYERS[base_idx]
-    next_info = TIMBRE_LAYERS[next_idx]
-    base_gain = 1.0 - mix
-    next_gain = mix
+#     base_info = TIMBRE_LAYERS[base_idx]
+#     next_info = TIMBRE_LAYERS[next_idx]
+#     base_gain = 1.0 - mix
+#     next_gain = mix
 
-    def scaled_layer(layer_info, gain):
-        filename = NOTE_FILENAMES.get(note_key)
-        if not filename:
-            return None
-        # 確保這裡使用的是修正後的 load_wave_data (包含 ffmpeg 標準化)
-        wave_data = load_wave_data(os.path.join(layer_info["dir"], filename))
-        if not wave_data:
-            return None
-        sr, ch, sw, audio = wave_data
-        velocity_factor = compute_velocity_factor(velocity)
-        gain_scale = (0.3 + 0.7 * velocity_factor) * gain * INSTRUMENT_MASTER_GAIN
-        adjusted = np.clip(audio * gain_scale, -32768, 32767).astype(np.int16)
-        return sr, ch, sw, adjusted
+#     def scaled_layer(layer_info, gain):
+#         filename = NOTE_FILENAMES.get(note_key)
+#         if not filename:
+#             return None
+#         # 確保這裡使用的是修正後的 load_wave_data (包含 ffmpeg 標準化)
+#         wave_data = load_wave_data(os.path.join(layer_info["dir"], filename))
+#         if not wave_data:
+#             return None
+#         sr, ch, sw, audio = wave_data
+#         velocity_factor = compute_velocity_factor(velocity)
+#         gain_scale = (0.3 + 0.7 * velocity_factor) * gain * INSTRUMENT_MASTER_GAIN
+#         adjusted = np.clip(audio * gain_scale, -32768, 32767).astype(np.int16)
+#         return sr, ch, sw, adjusted
 
-    base_wave = scaled_layer(base_info, base_gain)
-    next_wave = scaled_layer(next_info, next_gain)
+#     base_wave = scaled_layer(base_info, base_gain)
+#     next_wave = scaled_layer(next_info, next_gain)
 
-    if not base_wave and not next_wave:
-        return None
-    chosen = base_wave or next_wave
-    sample_rate, num_channels, sample_width, audio_data = chosen
-    blended = np.zeros_like(audio_data)
+#     if not base_wave and not next_wave:
+#         return None
+#     chosen = base_wave or next_wave
+#     sample_rate, num_channels, sample_width, audio_data = chosen
+#     blended = np.zeros_like(audio_data)
 
-    for data in (base_wave, next_wave):
-        if not data:
-            continue
-        _, _, _, audio = data
-        if len(audio) < len(blended):
-            audio = np.pad(audio, (0, len(blended) - len(audio)))
-        blended[: len(audio)] = np.clip(
-            blended[: len(audio)] + audio[: len(blended)], -32768, 32767
-        )
+#     for data in (base_wave, next_wave):
+#         if not data:
+#             continue
+#         _, _, _, audio = data
+#         if len(audio) < len(blended):
+#             audio = np.pad(audio, (0, len(blended) - len(audio)))
+#         blended[: len(audio)] = np.clip(
+#             blended[: len(audio)] + audio[: len(blended)], -32768, 32767
+#         )
 
-    # --- 修改處：移除 Pitch Factor ---
-    # pitch_factor = 1.0 + 0.25 * compute_velocity_factor(velocity)
-    # adjusted_sample_rate = int(sample_rate * pitch_factor)
+#     # --- 修改處：移除 Pitch Factor ---
+#     # pitch_factor = 1.0 + 0.25 * compute_velocity_factor(velocity)
+#     # adjusted_sample_rate = int(sample_rate * pitch_factor)
     
-    # 直接使用原始 sample_rate
-    return sa.WaveObject(blended.tobytes(), num_channels, sample_width, sample_rate)
+#     # 直接使用原始 sample_rate
+#     return sa.WaveObject(blended.tobytes(), num_channels, sample_width, sample_rate)
 
-def play_action_sound(action_name: str, velocity: float, hand_x: float, timbre_mode: str):
-    """Play the mapped tone for the given top action if available."""
-    if action_name in TOP_ACTION_FREQS:
-        base_freq = TOP_ACTION_FREQS[action_name]
-        pitch_factor = 1.0 + 0.25 * compute_velocity_factor(velocity)
-        freq = int(base_freq * pitch_factor)
-        play_beep_sound(freq, 200)
-        return
-
+# --- 2. 簡化播放邏輯 ---
+def play_action_sound(action_name, velocity, hand_x):
+    """
+    簡化版播放函式：只負責播放對應的 WAV，移除音色混合功能。
+    """
+    # 1. 優先嘗試播放 WAV 音檔
     sound_info = TOP_ACTION_SOUNDS.get(action_name)
-    note_key = ACTION_NOTE_KEYS.get(action_name)
-    if timbre_mode == TIMBRE_MODES[1] and note_key:
-        wave_obj = build_blended_wave(note_key, velocity, hand_x)
-    else:
-        wave_obj = None
-
-    if not wave_obj and sound_info:
+    if sound_info:
         sound_dir, filename = sound_info
         path = os.path.join(sound_dir, filename)
+        # 使用速度來改變音量
         wave_obj = load_scaled_wave(path, velocity)
+        if wave_obj:
+            wave_obj.play()
+            return
 
-    if wave_obj is None:
-        return
-    try:
-        wave_obj.play()
-    except Exception as e:
-        print(f"播放失敗：{e}")
+    # 2. 如果找不到 WAV，使用合成音 (Beep) 作為備案
+    # 嘗試從名稱中找出音名關鍵字 (do, re, mi...)
+    found_key = None
+    # 先找精確定義的頻率表
+    for key in TOP_ACTION_FREQS.keys():
+        if key in action_name.lower() or f"({key})" in action_name.lower():
+            found_key = key
+            break
+    
+    # 若沒找到，嘗試模糊比對
+    if not found_key:
+        for note in ["do", "re", "mi", "fa", "so", "la", "ti"]:
+            if note in action_name.lower():
+                found_key = note
+                break
+
+    if found_key:
+        base_freq = TOP_ACTION_FREQS.get(found_key, 440)
+        # 簡單的動態音高 (稍微隨速度變化)
+        pitch_factor = 1.0 + 0.05 * compute_velocity_factor(velocity) 
+        freq = int(base_freq * pitch_factor)
+        play_beep_sound(freq, 200)
+    else:
+        # 如果連音名都辨識不出來，印出警告但不崩潰
+        print(f"警告：找不到音效或頻率定義: {action_name}")
+
 
 TRIGGER_THRESHOLD = 15
 ACCUMULATION_RATE = 2
@@ -763,13 +774,13 @@ def get_preset_by_key(key: str):
     return 0, SCALE_PRESETS[0]
 
 
-def rebuild_top_for_preset(
-    preset_idx: int,
-    menu_visible: bool,
-    zones: list,
-):
+def rebuild_top_for_preset(preset_idx, menu_visible, zones):
     """Replace the top row with the specified preset and rebuild caches."""
     preset = SCALE_PRESETS[preset_idx]
+    
+    # 【關鍵修改】: 每次切換介面時，立刻重新載入該介面的聲音
+    load_active_preset_sounds(preset)
+
     zones_without_top = [z for z in zones if z[4] not in TOP_ACTION_ALL]
     top_zone_cache = build_top_zones(preset["names"])
 
@@ -782,6 +793,7 @@ def rebuild_top_for_preset(
     zone_accumulators = [0] * len(zones)
     feedback_timers = [0] * len(zones)
     zone_thresholds = build_zone_thresholds(zones)
+    
     return (
         preset["names"],
         top_zone_cache,
@@ -790,6 +802,7 @@ def rebuild_top_for_preset(
         feedback_timers,
         zone_thresholds,
     )
+
 
 # --- 在 main 計算出的左右按鈕座標，將存放在這裡供全域使用 ---
 NAV_BTN_LEFT_RECT = (0, 0, 0, 0)  # (x, y, w, h)
@@ -892,15 +905,16 @@ def put_chinese_text(frame, text, position, font_paths, font_size, color):
     return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
 
 def init_four_buttons(current_scale_idx, menu_visible):
-    """初始化底部按鈕：左右貼邊，中間居中"""
+    """初始化底部按鈕：根據是否已開始，決定中間顯示幾顆按鈕"""
     global NAV_BTN_LEFT_RECT, NAV_BTN_RIGHT_RECT, BASE_ZONES
     
     # 參數設定
     btn_w = 200
     btn_h = 100
-    margin_side = 20  # 距離螢幕左右邊界的距離
+    margin_side = 20
     margin_bottom = 30
     btn_y = CAP_HEIGHT - btn_h - margin_bottom
+    gap = 20 # 按鈕間距
 
     # 1. 左側按鈕 (貼左)
     NAV_BTN_LEFT_RECT = (margin_side, btn_y, btn_w, btn_h)
@@ -908,18 +922,28 @@ def init_four_buttons(current_scale_idx, menu_visible):
     # 2. 右側按鈕 (貼右)
     NAV_BTN_RIGHT_RECT = (CAP_WIDTH - btn_w - margin_side, btn_y, btn_w, btn_h)
 
-    # 3. 中間的系統按鈕 (結束、開始)，計算置中位置
-    gap = 20
-    # 兩個按鈕寬度 + 間距
-    total_center_width = btn_w * 2 + gap
-    center_start_x = (CAP_WIDTH - total_center_width) // 2
+    # 3. 中間的按鈕邏輯 (重點修改處)
+    if not menu_visible:
+        # 【情境 A：還沒開始】 -> 顯示 [離開] + [開始]
+        # 計算兩顆按鈕的總寬度來置中
+        total_center_width = btn_w * 2 + gap
+        center_start_x = (CAP_WIDTH - total_center_width) // 2
+        
+        BASE_ZONES = [
+            (center_start_x, btn_y, btn_w, btn_h, EXIT_LABEL),
+            (center_start_x + btn_w + gap, btn_y, btn_w, btn_h, SHOW_MENU_LABEL),
+        ]
+    else:
+        # 【情境 B：已經開始】 -> 只顯示 [離開]
+        # 計算單顆按鈕的總寬度來置中
+        total_center_width = btn_w
+        center_start_x = (CAP_WIDTH - total_center_width) // 2
+        
+        BASE_ZONES = [
+            (center_start_x, btn_y, btn_w, btn_h, EXIT_LABEL),
+        ]
     
-    BASE_ZONES = [
-        (center_start_x, btn_y, btn_w, btn_h, EXIT_LABEL),
-        (center_start_x + btn_w + gap, btn_y, btn_w, btn_h, SHOW_MENU_LABEL),
-    ]
-    
-    # 組合：[左] + [中] + [右]
+    # 4. 組合：[左] + [中間(動態)] + [右]
     zones = swap_bottom_to_instruments(BASE_ZONES, current_scale_idx)
     zones = ensure_toggle_label(zones, menu_visible)
     return zones
@@ -1013,7 +1037,8 @@ def main():
 
     # 介面狀態：預設隱藏上方五個功能區塊
     menu_visible = False
-    current_scale_idx, current_preset = get_preset_by_key("piano")
+    current_scale_idx, current_preset = get_preset_by_key("piano_chinese")
+    load_active_preset_sounds(current_preset)
     current_timbre_idx = 0
     current_top_names = current_preset["names"]
     top_zone_cache = build_top_zones(current_top_names)
@@ -1200,55 +1225,45 @@ def main():
                 
                 current_prev_label, current_next_label = get_nav_labels(current_scale_idx)
 
+                # 1. 結束程式
                 if name == EXIT_LABEL:
                     exit_requested = True
+                
+                # 2. 選單顯示/隱藏
                 elif name in (SHOW_MENU_LABEL, HIDE_MENU_LABEL):
                     menu_toggle_requested = True
                     toggle_beep_requested = True
 
+                # 3. 上一個樂器 (切換)
                 elif name == current_prev_label:
-                    # 索引減 1 (循環)
                     current_scale_idx = (current_scale_idx - 1 + len(SCALE_PRESETS)) % len(SCALE_PRESETS)
-                    # 重新建構上方音階 與 底部按鈕
+                    # 重建介面
                     (current_top_names, top_zone_cache, COMMAND_ZONES, 
                      zone_accumulators, feedback_timers, zone_thresholds) = rebuild_top_for_preset(
                         current_scale_idx, menu_visible, COMMAND_ZONES
                     )
-                    # 更新底部按鈕
                     COMMAND_ZONES = swap_bottom_to_instruments(COMMAND_ZONES, current_scale_idx)
-                    # 強制檢查並修正按鈕文字 (開始 -> 收起功能)
                     COMMAND_ZONES = ensure_toggle_label(COMMAND_ZONES, menu_visible)
-                    zones_dirty = True
-                elif name == current_next_label:
-                    # 索引加 1 (循環)
-                    current_scale_idx = (current_scale_idx + 1) % len(SCALE_PRESETS)
-                    # 重新建構上方音階 與 底部按鈕
-                    (current_top_names, top_zone_cache, COMMAND_ZONES, 
-                     zone_accumulators, feedback_timers, zone_thresholds) = rebuild_top_for_preset(
-                        current_scale_idx, menu_visible, COMMAND_ZONES
-                    )
-                    # 更新底部按鈕
-                    COMMAND_ZONES = swap_bottom_to_instruments(COMMAND_ZONES, current_scale_idx)
-                    # 強制檢查並修正按鈕文字 (開始 -> 收起功能)
-                    COMMAND_ZONES = ensure_toggle_label(COMMAND_ZONES, menu_visible)
-                    
                     zones_dirty = True
 
-                elif name == PIANO_LABEL:
-                    piano_top_requested = True
-                elif name == VIOLIN_LABEL:
-                    violin_top_requested = True
-                elif name == TIMBRE_MODE_LABEL:
-                    timbre_cycle_requested = True
-                elif name in TOP_ACTION_ALL:
-                    hand_x = last_hand_x if last_hand_x is not None else x + w / 2
-                    play_action_sound(
-                        name,
-                        zone_velocity,
-                        hand_x,
-                        TIMBRE_MODES[current_timbre_idx],
+                # 4. 下一個樂器 (切換)
+                elif name == current_next_label:
+                    current_scale_idx = (current_scale_idx + 1) % len(SCALE_PRESETS)
+                    # 重建介面
+                    (current_top_names, top_zone_cache, COMMAND_ZONES, 
+                     zone_accumulators, feedback_timers, zone_thresholds) = rebuild_top_for_preset(
+                        current_scale_idx, menu_visible, COMMAND_ZONES
                     )
-                    print(f"{name} 觸發（播放音效）。 速度: {zone_velocity:.1f}")
+                    COMMAND_ZONES = swap_bottom_to_instruments(COMMAND_ZONES, current_scale_idx)
+                    COMMAND_ZONES = ensure_toggle_label(COMMAND_ZONES, menu_visible)
+                    zones_dirty = True
+
+                # 5. 播放音效 (上方琴鍵)
+                elif name in TOP_ACTION_ALL:
+                    hx = last_hand_x if last_hand_x is not None else x + w / 2
+                    # 呼叫新的播放函式 (移除了 timbre 參數)
+                    play_action_sound(name, zone_velocity, hx)
+                    print(f"{name} 觸發（播放音效）。")
 
                 zone_accumulators[i] = 0
 
@@ -1366,42 +1381,6 @@ def main():
                 feedback_timers,
                 zone_thresholds,
             ) = rebuild_top_for_preset(current_scale_idx, menu_visible, COMMAND_ZONES)
-            continue
-
-        if timbre_cycle_requested:
-            current_timbre_idx = (current_timbre_idx + 1) % len(TIMBRE_MODES)
-
-        if piano_top_requested:
-            if not menu_visible:
-                menu_visible, COMMAND_ZONES, top_zone_cache = toggle_menu_visibility(
-                    menu_visible, COMMAND_ZONES, top_zone_cache, current_top_names
-                )
-            current_scale_idx, current_preset = get_preset_by_key("piano")
-            current_top_names, top_zone_cache, COMMAND_ZONES, zone_accumulators, feedback_timers, zone_thresholds = rebuild_top_for_preset(
-                current_scale_idx, menu_visible, COMMAND_ZONES
-            )
-            continue
-
-        if violin_top_requested:
-            if not menu_visible:
-                menu_visible, COMMAND_ZONES, top_zone_cache = toggle_menu_visibility(
-                    menu_visible, COMMAND_ZONES, top_zone_cache, current_top_names
-                )
-            current_scale_idx, current_preset = get_preset_by_key("violin")
-            current_top_names, top_zone_cache, COMMAND_ZONES, zone_accumulators, feedback_timers, zone_thresholds = rebuild_top_for_preset(
-                current_scale_idx, menu_visible, COMMAND_ZONES
-            )
-            continue
-
-        if windows_top_requested:
-            if not menu_visible:
-                menu_visible, COMMAND_ZONES, top_zone_cache = toggle_menu_visibility(
-                    menu_visible, COMMAND_ZONES, top_zone_cache, current_top_names
-                )
-            current_scale_idx, current_preset = get_preset_by_key("windows")
-            current_top_names, top_zone_cache, COMMAND_ZONES, zone_accumulators, feedback_timers, zone_thresholds = rebuild_top_for_preset(
-                current_scale_idx, menu_visible, COMMAND_ZONES
-            )
             continue
 
         if zones_dirty:
