@@ -10,12 +10,12 @@ import tempfile
 from collections import deque
 from datetime import datetime
 import platform
-import mediapipe as mp # 新增 MediaPipe 導入
+import mediapipe as mp
 import simpleaudio as sa
 
 try:
     import winsound
-except ImportError:  # 非 Windows 環境無 winsound
+except ImportError:
     winsound = None
 
 # MediaPipe 手部偵測設定
@@ -24,23 +24,21 @@ mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
 
 FONT_PATHS = [
-    # macOS/Linux 常用路徑或內建字體名稱（macOS 路徑優先）
-    "/System/Library/Fonts/PingFang.ttc",             # macOS 內建蘋方體
-    "/System/Library/Fonts/STHeiti Medium.ttc",       # macOS 內建黑體
+    "/System/Library/Fonts/PingFang.ttc",
+    "/System/Library/Fonts/STHeiti Medium.ttc",
     "/System/Library/Fonts/Supplemental/PingFang.ttc",
-    "/System/Library/Fonts/Supplemental/Songti.ttc",  # macOS 內建宋體
-    "Arial Unicode MS.ttf",                           # 許多系統都有的通用字體名稱
-    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",   # Linux (Ubuntu) 常用中文字體
-    # Windows 路徑
-    "C:/Windows/Fonts/msjh.ttf",                      # Windows 微軟正黑體
-    "C:/Windows/Fonts/mingliu.ttc",                   # Windows 細明體
+    "/System/Library/Fonts/Supplemental/Songti.ttc",
+    "Arial Unicode MS.ttf",
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+    "C:/Windows/Fonts/msjh.ttf",
+    "C:/Windows/Fonts/mingliu.ttc",
     "msjh.ttf"
 ]
 FONT_SIZE = 30
 _FONT_CACHE = {}
 _FONT_WARNING_SHOWN = False
 
-# --- 參數設定 ---
+# 參數
 CAP_WIDTH = 1280
 CAP_HEIGHT = 720
 BOX_COLOR = (182, 175, 164),  # 霧霾藍 (Haze Blue)
@@ -48,37 +46,34 @@ COLOR_TOP_NOTE = (166, 149, 158)  # 灰紫 (Grey Purple)
 COLOR_NAV_BTN  = (122, 157, 138)  # 鼠尾草綠 (Sage Green)
 COLOR_SYS_BTN  = (146, 166, 186)  # 礦石灰 (Mineral Grey)
 
-# --- 1. 修改參數與音階定義 ---
 EXIT_LABEL = "結束程式 (Exit)"
 SHOW_MENU_LABEL = "開始"
 HIDE_MENU_LABEL = "收起功能"
 
-# 定義音色資料夾
+# 音色資料夾
 PIANO_SOUND_DIR = "piano_sound"
 VIOLIN_SOUND_DIR = "violin_sound"
 
-# 定義音階名稱列表
+# 音階名稱
 NAMES_CHINESE = ["宮 (Do)", "商 (Re)", "角 (Mi)", "徵 (So)", "羽 (La)"]
 NAMES_RITSU = ["律 一 (Do)", "律 二 (Re)", "律 三 (Fa)", "律 四 (So)", "律 五 (La)"]
 NAMES_RYO = ["呂 一 (Re)", "呂 二 (Mi)", "呂 三 (So)", "呂 四 (La)", "呂 五 (Ti)"]
 
-# 整合所有名稱
+# 整合名稱
 TOP_ACTION_ALL = tuple(NAMES_CHINESE + NAMES_RITSU + NAMES_RYO)
 
-# 定義音檔對照表：將唱名映射到標準音名檔案
-# 鋼琴專用檔名 (結尾是 1)
+# 音檔對照表
 NOTE_FILES_PIANO = {
     "do": "c1.wav", "re": "d1.wav", "mi": "e1.wav", "fa": "f1.wav", 
     "so": "g1.wav", "la": "a1.wav", "ti": "b1.wav",
 }
 
-# 小提琴專用檔名 (結尾是 3)
 NOTE_FILES_VIOLIN = {
     "do": "c3.wav", "re": "d3.wav", "mi": "e3.wav", "fa": "f3.wav", 
     "so": "g3.wav", "la": "a3.wav", "ti": "b3.wav",
 }
 
-# 定義頻率 (用於音檔遺失時的 Beep 備用音，對應 C4~B4)
+# 缺檔時的備用頻率
 TOP_ACTION_FREQS = {
     "do": 262, # C4
     "re": 294, # D4
@@ -89,9 +84,8 @@ TOP_ACTION_FREQS = {
     "ti": 494  # B4
 }
 
-# 定義 6 種預設集
 SCALE_PRESETS = [
-    # --- 鋼琴系列 (使用 NOTE_FILES_PIANO) ---
+    # 鋼琴系列
     {
         "key": "piano_chinese",
         "label": "[鋼琴] 中國五聲",
@@ -116,7 +110,7 @@ SCALE_PRESETS = [
         "sound_dir": PIANO_SOUND_DIR,
         "file_map": NOTE_FILES_PIANO
     },
-    # --- 小提琴系列 (使用 NOTE_FILES_VIOLIN) ---
+    # 小提琴系列
     {
         "key": "violin_chinese",
         "label": "[小提琴] 中國五聲",
@@ -143,11 +137,9 @@ SCALE_PRESETS = [
     },
 ]
 
-# 初始化變數
 ACTION_NOTE_KEYS = {}
 TOP_ACTION_SOUNDS = {}
 
-# --- 移除舊的 TIMBRE 定義，直接清空 ---
 TIMBRE_LAYERS = []     
 TIMBRE_MODES = []      
 TIMBRE_MODE_LABEL = ""
@@ -176,23 +168,17 @@ BEEP_WARNING_SHOWN = False
 IS_WINDOWS = platform.system() == "Windows"
 
 def get_nav_labels(current_idx):
-    """計算並回傳 (上一個樂器名稱, 下一個樂器名稱)"""
+    """回傳上一個/下一個樂器文字。"""
     n = len(SCALE_PRESETS)
-    # 使用 % n 確保循環 (0 的前一個變成最後一個)
     prev_idx = (current_idx - 1 + n) % n
     next_idx = (current_idx + 1) % n
-    
-    # 加箭頭讓視覺更清楚
     prev_label = f"< {SCALE_PRESETS[prev_idx]['label']}"
     next_label = f"{SCALE_PRESETS[next_idx]['label']} >"
     
     return prev_label, next_label
 
 def build_top_zones(top_names=None):
-    """
-    建立上方五個區塊，左右貼齊邊界並平均分開。
-    左側第一個 x=0，右側最後一個 x=CAP_WIDTH - W，中間等距分布。
-    """
+    """建立上方區塊，左右貼齊並等距。"""
     names = top_names if top_names is not None else TOP_ACTION_NAMES_PIANO
     num = len(names)
     if num <= 1:
@@ -216,15 +202,10 @@ def ensure_toggle_label(zones, menu_visible):
 
 
 def load_active_preset_sounds(preset):
-    """
-    切換樂器時呼叫此函式。
-    它會先「清空」目前的音效表，然後只載入當前預設集 (preset) 的聲音。
-    這樣就不會發生「小提琴覆蓋鋼琴」的問題。
-    """
+    """切換樂器時重載當前預設的音效。"""
     TOP_ACTION_SOUNDS.clear()
     ACTION_NOTE_KEYS.clear()
 
-    # 讀取該預設集專用的檔名表
     current_file_map = preset["file_map"]
     
     for display_name, note_key in zip(preset["names"], preset["note_keys"]):
@@ -233,18 +214,13 @@ def load_active_preset_sounds(preset):
         if preset["sound_dir"]:
             filename = current_file_map.get(note_key)
             if filename:
-                # 登錄音效：名字 -> (資料夾, 檔名)
                 TOP_ACTION_SOUNDS[display_name] = (preset["sound_dir"], filename)
 
 
 def toggle_menu_visibility(menu_visible, zones, top_zone_cache, top_names):
-    """
-    Toggle whether the top action row is visible. Keeps any edited positions for the
-    top action zones by caching them while hidden.
-    """
+    """切換上方區塊顯示並維持暫存位置。"""
     new_menu_visible = not menu_visible
 
-    # Keep base zones and strip out top actions for layout math.
     zones_without_top = [z for z in zones if z[4] not in TOP_ACTION_ALL]
 
     if new_menu_visible:
@@ -262,7 +238,6 @@ def toggle_menu_visibility(menu_visible, zones, top_zone_cache, top_names):
 
 
 BASE_ZONES = [
-    # (x, y, w, h, name)
     (40, 560, 200, 140, EXIT_LABEL),
     (790, 560, 200, 140, TIMBRE_MODE_LABEL),
     (1040, 560, 200, 140, SHOW_MENU_LABEL),
@@ -271,32 +246,25 @@ COMMAND_ZONES = ensure_toggle_label(BASE_ZONES.copy(), menu_visible=False)
 
 
 def compute_velocity_factor(velocity: float):
-    """Normalize velocity into [0, 1] for gain/pitch mapping."""
-    # Velocity is in pixels/sec; clamp to avoid extreme scaling.
+    """把速度正規化到 0-1。"""
     normalized = max(0.0, min(velocity / 400.0, 1.0))
     return normalized
 
 def velocity_to_color(velocity: float, base_color):
-    """
-    將速度映射為顏色，從指定的 base_color 漸變到亮黃色。
-    [Fix]: 強制將 numpy 數值轉為 Python int，避免 OpenCV 報錯。
-    """
+    """速度越快顏色越亮。"""
     factor = compute_velocity_factor(velocity)
     
     base_arr = np.array(base_color)
     hot_arr = np.array([255, 255, 0]) 
     
-    # 計算漸層顏色
     blended = (base_arr * (1 - factor) + hot_arr * factor).astype(int)
-    
-    # [關鍵修正]: 這裡必須用 int(c) 強制轉型，不能只用 tuple(blended)
     return tuple(int(c) for c in blended)
 
 def clamp01(value: float):
     return max(0.0, min(value, 1.0))
 
 
-# --- 動態視覺效果設定 ---
+# 視覺效果設定
 VISUAL_BUFFER_DOWNSCALE = 4
 MOTION_HISTORY_FRAMES = 30
 MOTION_VELOCITY_NORM = 160.0
@@ -360,7 +328,7 @@ def update_visual_buffer(state, motion_metrics, dt):
 
     x_term = np.sin(state["x_coords"] * freq + state["phase"])
     y_term = np.cos(state["y_coords"] * (freq * 0.6 + 0.4) + state["phase"] * 1.35)
-    wave = (x_term + y_term + 2.0) * 0.25  # normalize to 0..1 range
+    wave = (x_term + y_term + 2.0) * 0.25
     wave = np.power(wave, 1.2) * amplitude
 
     cold_color = np.array([40, 80, 140], dtype=np.float32)
@@ -388,15 +356,13 @@ def blend_overlay_on_zones(frame, overlay, zones, base_alpha, highlights=None):
     for idx, (x, y, w, h, _) in enumerate(zones):
         zone_alpha = base_alpha
         
-        # --- 修改處：增加 idx < len(highlights) 的安全檢查 ---
-        # 這樣就算 highlights 列表比 zones 短，也不會報錯
+        # highlights 比 zones 短時也不會越界
         if highlights and idx < len(highlights) and highlights[idx]:
             zone_alpha = clamp01(base_alpha * 1.3)
 
         if zone_alpha <= 0:
             continue
             
-        # 確保繪圖不超出畫面邊界
         if y + h > frame.shape[0] or x + w > frame.shape[1]:
             continue
 
@@ -436,16 +402,11 @@ def step_fade(current: float, fade_info):
     return new_value, fade_info
 
 
-# --- 音訊處理核心 (修正版) ---
 def ensure_standard_wav(input_path: str):
-    """
-    利用 ffmpeg 將任何音檔（MP3 或非標準 WAV）轉為標準 44100Hz, 16-bit, 立體聲的臨時 WAV。
-    這能解決 'Weird sample rates' 的錯誤。
-    """
+    """用 ffmpeg 轉成 44100Hz、16-bit、雙聲道的暫存 wav。"""
     fd, temp_path = tempfile.mkstemp(suffix=".wav")
     os.close(fd)
 
-    # ffmpeg 強制轉換參數：-ar 44100 (取樣率), -ac 2 (雙聲道), -sample_fmt s16 (16位元)
     cmd = [
         "ffmpeg", "-y", "-v", "error", "-i", input_path,
         "-ar", "44100", "-ac", "2", "-sample_fmt", "s16", "-f", "wav", temp_path
@@ -455,19 +416,15 @@ def ensure_standard_wav(input_path: str):
         subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         return temp_path
     except FileNotFoundError:
-        print("系統找不到 ffmpeg，請先執行 'brew install ffmpeg' (macOS) 或 'apt install ffmpeg' (Linux)。")
+        print("找不到 ffmpeg，請先安裝後再試。")
         if os.path.exists(temp_path): os.remove(temp_path)
         return None
     except Exception as e:
-        # print(f"音檔標準化失敗 ({input_path}): {e}") # 可取消註解查看詳細錯誤
         if os.path.exists(temp_path): os.remove(temp_path)
         return None
 
 def load_wave_data(path: str):
-    """
-    讀取音檔數據。
-    如果檔案是 MP3 或取樣率不是 44100Hz (導致 simpleaudio 報錯)，會自動進行標準化轉換。
-    """
+    """讀取音檔，不合規就自動轉檔。"""
     if not os.path.exists(path):
         print(f"找不到音檔：{path}")
         return None
@@ -475,26 +432,21 @@ def load_wave_data(path: str):
     temp_wav_path = None
     needs_convert = False
 
-    # 1. 檢查是否需要轉換
     try:
         with wave.open(path, "rb") as wf:
-            # simpleaudio 在 macOS 上通常要求 44100Hz 且為 16-bit
             if wf.getframerate() != 44100 or wf.getsampwidth() != 2:
                 needs_convert = True
     except:
-        # 如果直接用 wave 打不開 (例如是 MP3 或者是損壞的檔頭)，就強制嘗試轉換
         needs_convert = True
 
     source_path = path
 
-    # 2. 如果需要，執行轉換
     if needs_convert:
         temp_wav_path = ensure_standard_wav(path)
         if not temp_wav_path:
-            return None # 轉換失敗
+            return None
         source_path = temp_wav_path
 
-    # 3. 讀取最終的標準 WAV
     try:
         with wave.open(source_path, "rb") as wf:
             sample_rate = wf.getframerate()
@@ -507,7 +459,6 @@ def load_wave_data(path: str):
         print(f"讀取音檔失敗：{e}")
         return None
     finally:
-        # 清理暫存檔
         if temp_wav_path and os.path.exists(temp_wav_path):
             os.remove(temp_wav_path)
 
@@ -521,16 +472,9 @@ def load_scaled_wave(path: str, velocity: float):
     sample_rate, num_channels, sample_width, audio_data = wave_data
     velocity_factor = compute_velocity_factor(velocity)
     
-    # 保留音量變化
     gain = (0.4 + 0.6 * velocity_factor) * INSTRUMENT_MASTER_GAIN
-    
-    # --- 修改處：移除 Pitch Factor ---
-    # pitch_factor = 1.0 + 0.25 * velocity_factor
-    # adjusted_sample_rate = int(sample_rate * pitch_factor)
 
     scaled = np.clip(audio_data * gain, -32768, 32767).astype(np.int16)
-    
-    # 直接使用原始 sample_rate
     return sa.WaveObject(scaled.tobytes(), num_channels, sample_width, sample_rate)
 
 def build_wave_with_gain(wave_data, gain: float):
@@ -544,9 +488,8 @@ def build_wave_with_gain(wave_data, gain: float):
 
 
 def generate_fallback_ambient(duration: float = 2.5, sample_rate: int = 44100):
-    """Generate a soft stereo noise bed as a built-in ambient fallback."""
+    """產生一段柔和環境音當備用。"""
     num_samples = int(duration * sample_rate)
-    # Combine two slow sine waves and lightly randomized noise to avoid a harsh tone.
     t = np.linspace(0, duration, num_samples, endpoint=False)
     slow_wave = 0.15 * np.sin(2 * math.pi * 0.35 * t)
     shimmer = 0.08 * np.sin(2 * math.pi * 0.85 * t + math.pi / 3)
@@ -558,7 +501,7 @@ def generate_fallback_ambient(duration: float = 2.5, sample_rate: int = 44100):
 
 
 def resolve_ambient_path():
-    """Pick the first available ambient file, or return default with a warning."""
+    """回傳可用的環境音檔路徑，沒有就給警告。"""
     for _label, path in AMBIENT_SOUND_FILES:
         if os.path.exists(path):
             return path, None
@@ -572,7 +515,7 @@ def resolve_ambient_path():
 
 
 def load_ambient_or_fallback(path: str):
-    """Load ambient file if present; otherwise synthesize an in-memory loop."""
+    """有檔案就載入，沒有就用合成版本。"""
     wave_data = load_wave_data(path)
     if wave_data:
         return wave_data, None
@@ -583,7 +526,7 @@ def load_ambient_or_fallback(path: str):
 
 
 def _generate_beep_wave(freq: int = 880, duration_ms: int = 200, sample_rate: int = 44100):
-    """Generate a short mono beep tone as a WaveObject."""
+    """產生一段簡短提示音。"""
     duration = duration_ms / 1000.0
     t = np.linspace(0, duration, int(sample_rate * duration), False)
     tone = 0.35 * np.sin(2 * math.pi * freq * t)
@@ -592,7 +535,7 @@ def _generate_beep_wave(freq: int = 880, duration_ms: int = 200, sample_rate: in
 
 
 def load_beep_wave():
-    """Load or synthesize the shared short beep sound for cross-platform prompts."""
+    """載入提示音，缺檔時就動態生成。"""
     global BEEP_WAVE
     if os.path.exists(BEEP_SOUND_PATH):
         try:
@@ -622,7 +565,7 @@ def ensure_beep_wave_loaded():
 
 
 def play_beep_sound(freq: int = 880, duration_ms: int = 200):
-    """Play a system beep when possible, otherwise use the shared fallback tone."""
+    """能用系統嗶聲就用，否則放內建音。"""
     if IS_WINDOWS and winsound:
         try:
             winsound.Beep(freq, duration_ms)
@@ -643,89 +586,23 @@ def normalize_hand_x(hand_x: float):
         return 0.5
     return max(0.0, min(hand_x / CAP_WIDTH, 1.0))
 
-# def build_blended_wave(note_key: str, velocity: float, hand_x: float):
-#     """Blend multiple layers according to horizontal position."""
-#     layer_count = len(TIMBRE_LAYERS)
-#     if layer_count == 0:
-#         return None
-
-#     normalized_x = normalize_hand_x(hand_x)
-#     segment = normalized_x * (layer_count - 1)
-#     base_idx = int(math.floor(segment))
-#     next_idx = min(base_idx + 1, layer_count - 1)
-#     mix = segment - base_idx
-
-#     base_info = TIMBRE_LAYERS[base_idx]
-#     next_info = TIMBRE_LAYERS[next_idx]
-#     base_gain = 1.0 - mix
-#     next_gain = mix
-
-#     def scaled_layer(layer_info, gain):
-#         filename = NOTE_FILENAMES.get(note_key)
-#         if not filename:
-#             return None
-#         # 確保這裡使用的是修正後的 load_wave_data (包含 ffmpeg 標準化)
-#         wave_data = load_wave_data(os.path.join(layer_info["dir"], filename))
-#         if not wave_data:
-#             return None
-#         sr, ch, sw, audio = wave_data
-#         velocity_factor = compute_velocity_factor(velocity)
-#         gain_scale = (0.3 + 0.7 * velocity_factor) * gain * INSTRUMENT_MASTER_GAIN
-#         adjusted = np.clip(audio * gain_scale, -32768, 32767).astype(np.int16)
-#         return sr, ch, sw, adjusted
-
-#     base_wave = scaled_layer(base_info, base_gain)
-#     next_wave = scaled_layer(next_info, next_gain)
-
-#     if not base_wave and not next_wave:
-#         return None
-#     chosen = base_wave or next_wave
-#     sample_rate, num_channels, sample_width, audio_data = chosen
-#     blended = np.zeros_like(audio_data)
-
-#     for data in (base_wave, next_wave):
-#         if not data:
-#             continue
-#         _, _, _, audio = data
-#         if len(audio) < len(blended):
-#             audio = np.pad(audio, (0, len(blended) - len(audio)))
-#         blended[: len(audio)] = np.clip(
-#             blended[: len(audio)] + audio[: len(blended)], -32768, 32767
-#         )
-
-#     # --- 修改處：移除 Pitch Factor ---
-#     # pitch_factor = 1.0 + 0.25 * compute_velocity_factor(velocity)
-#     # adjusted_sample_rate = int(sample_rate * pitch_factor)
-    
-#     # 直接使用原始 sample_rate
-#     return sa.WaveObject(blended.tobytes(), num_channels, sample_width, sample_rate)
-
-# --- 2. 簡化播放邏輯 ---
 def play_action_sound(action_name, velocity, hand_x):
-    """
-    簡化版播放函式：只負責播放對應的 WAV，移除音色混合功能。
-    """
-    # 1. 優先嘗試播放 WAV 音檔
+    """播放對應的 WAV，沒有就用嗶聲備援。"""
     sound_info = TOP_ACTION_SOUNDS.get(action_name)
     if sound_info:
         sound_dir, filename = sound_info
         path = os.path.join(sound_dir, filename)
-        # 使用速度來改變音量
         wave_obj = load_scaled_wave(path, velocity)
         if wave_obj:
             wave_obj.play()
             return
 
-    # 2. 如果找不到 WAV，使用合成音 (Beep) 作為備案
-    # 嘗試從名稱中找出音名關鍵字 (do, re, mi...)
     found_key = None
-    # 先找精確定義的頻率表
     for key in TOP_ACTION_FREQS.keys():
         if key in action_name.lower() or f"({key})" in action_name.lower():
             found_key = key
             break
     
-    # 若沒找到，嘗試模糊比對
     if not found_key:
         for note in ["do", "re", "mi", "fa", "so", "la", "ti"]:
             if note in action_name.lower():
@@ -734,12 +611,10 @@ def play_action_sound(action_name, velocity, hand_x):
 
     if found_key:
         base_freq = TOP_ACTION_FREQS.get(found_key, 440)
-        # 簡單的動態音高 (稍微隨速度變化)
         pitch_factor = 1.0 + 0.05 * compute_velocity_factor(velocity) 
         freq = int(base_freq * pitch_factor)
         play_beep_sound(freq, 200)
     else:
-        # 如果連音名都辨識不出來，印出警告但不崩潰
         print(f"警告：找不到音效或頻率定義: {action_name}")
 
 
@@ -752,14 +627,14 @@ TOP_DECAY_RATE = 1
 
 
 def get_zone_params(name: str):
-    """Return (acc_rate, decay_rate, threshold) for zone by name."""
+    """回傳區塊的累積與閾值設定。"""
     if name in TOP_ACTION_ALL:
         return TOP_ACCUMULATION_RATE, TOP_DECAY_RATE, TOP_TRIGGER_THRESHOLD
     return ACCUMULATION_RATE, DECAY_RATE, TRIGGER_THRESHOLD
 
 
 def build_zone_thresholds(zones):
-    """Build per-zone thresholds list aligned with zones."""
+    """依序建立每個區塊的閾值清單。"""
     thresholds = []
     for _, _, _, _, name in zones:
         _, _, th = get_zone_params(name)
@@ -775,10 +650,9 @@ def get_preset_by_key(key: str):
 
 
 def rebuild_top_for_preset(preset_idx, menu_visible, zones):
-    """Replace the top row with the specified preset and rebuild caches."""
+    """切換上方琴鍵並重建狀態。"""
     preset = SCALE_PRESETS[preset_idx]
     
-    # 【關鍵修改】: 每次切換介面時，立刻重新載入該介面的聲音
     load_active_preset_sounds(preset)
 
     zones_without_top = [z for z in zones if z[4] not in TOP_ACTION_ALL]
@@ -804,35 +678,24 @@ def rebuild_top_for_preset(preset_idx, menu_visible, zones):
     )
 
 
-# --- 在 main 計算出的左右按鈕座標，將存放在這裡供全域使用 ---
-NAV_BTN_LEFT_RECT = (0, 0, 0, 0)  # (x, y, w, h)
-NAV_BTN_RIGHT_RECT = (0, 0, 0, 0) # (x, y, w, h)
+NAV_BTN_LEFT_RECT = (0, 0, 0, 0)
+NAV_BTN_RIGHT_RECT = (0, 0, 0, 0)
 
 def build_instrument_bottom_zones(prev_label, next_label):
-    """建立底部導航按鈕，使用 main 計算好的動態座標"""
-    # 使用全域變數中的座標
+    """用預先算好的座標建立底部導航。"""
     left_zone = (*NAV_BTN_LEFT_RECT, prev_label)
     right_zone = (*NAV_BTN_RIGHT_RECT, next_label)
     return [left_zone, right_zone]
 
 def swap_bottom_to_instruments(zones, current_idx):
-    """
-    確保底部顯示：[上一頁] + [BASE_ZONES] + [下一頁]
-    並保留原本已存在的上方音階按鈕 (Top Actions)
-    """
-    # 1. 準備左右導航按鈕
+    """重組底部按鈕，保留上方琴鍵。"""
     prev_label, next_label = get_nav_labels(current_idx)
     nav_left = (*NAV_BTN_LEFT_RECT, prev_label)
     nav_right = (*NAV_BTN_RIGHT_RECT, next_label)
     
-    # 2. 準備中間的功能按鈕 (直接從全域 BASE_ZONES 拿，不受文字變化影響)
     center_buttons = BASE_ZONES.copy()
     
-    # 3. 保留上方音階區塊 (如果存在的話)
-    # 過濾出屬於上方音階 (TOP_ACTION_ALL) 的區塊
     top_kept = [z for z in zones if z[4] in TOP_ACTION_ALL]
-    
-    # 4. 組合所有按鈕：[左] + [中間...] + [右] + [上方...]
     return [nav_left] + center_buttons + [nav_right] + top_kept
 
 GET_READY_SECONDS = 3    # 按下按鍵後的準備時間
@@ -840,10 +703,9 @@ CALIBRATION_SECONDS = 3  # 正式校準時間
 VAR_THRESHOLD = 75
 CAMERA_WAIT_TIMEOUT = 10 # 等待攝影機啟動的最長時間（秒）
 
-# --- 繪圖函式 ---
+# 繪圖
 def draw_ui(frame, zones, accumulators=None, threshold=None, zone_colors=None):
     for i, (x, y, w, h, name) in enumerate(zones):
-        # 處理顏色 (防呆)
         raw_color = zone_colors[i] if zone_colors else BOX_COLOR
         if isinstance(raw_color, (list, tuple)) and len(raw_color) > 0 and isinstance(raw_color[0], (list, tuple)):
             raw_color = raw_color[0]
@@ -854,9 +716,7 @@ def draw_ui(frame, zones, accumulators=None, threshold=None, zone_colors=None):
         
         x, y, w, h = int(x), int(y), int(w), int(h)
         
-        # 繪製進度條 (這裡加上了防當機機制)
         if accumulators is not None and threshold is not None:
-            # 【關鍵修正】：如果計時器列表比區域少，自動補 0，防止 IndexError
             if i >= len(accumulators):
                 accumulators.append(0.0)
             
@@ -866,9 +726,7 @@ def draw_ui(frame, zones, accumulators=None, threshold=None, zone_colors=None):
                 if progress > 0: 
                     cv2.rectangle(frame, (x, y), (x + int(w * progress), y + h), color, -1)
         
-        # 繪製外框
         cv2.rectangle(frame, (x, y), (x + w, y + h), color, 3)
-        # 繪製文字
         frame = put_chinese_text(frame, name, (x + 10, y + h - 15 - FONT_SIZE // 2), FONT_PATHS, FONT_SIZE, (255, 255, 255))
         
     return frame
@@ -901,31 +759,24 @@ def put_chinese_text(frame, text, position, font_paths, font_size, color):
             _FONT_WARNING_SHOWN = True
         font = ImageFont.load_default()
     
-    draw.text(position, text, font=font, fill=(color[2], color[1], color[0])) # OpenCV BGR to PIL RGB
+    draw.text(position, text, font=font, fill=(color[2], color[1], color[0]))
     return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
 
 def init_four_buttons(current_scale_idx, menu_visible):
     """初始化底部按鈕：根據是否已開始，決定中間顯示幾顆按鈕"""
     global NAV_BTN_LEFT_RECT, NAV_BTN_RIGHT_RECT, BASE_ZONES
     
-    # 參數設定
     btn_w = 200
     btn_h = 100
     margin_side = 20
     margin_bottom = 30
     btn_y = CAP_HEIGHT - btn_h - margin_bottom
-    gap = 20 # 按鈕間距
+    gap = 20
 
-    # 1. 左側按鈕 (貼左)
     NAV_BTN_LEFT_RECT = (margin_side, btn_y, btn_w, btn_h)
-    
-    # 2. 右側按鈕 (貼右)
     NAV_BTN_RIGHT_RECT = (CAP_WIDTH - btn_w - margin_side, btn_y, btn_w, btn_h)
 
-    # 3. 中間的按鈕邏輯 (重點修改處)
     if not menu_visible:
-        # 【情境 A：還沒開始】 -> 顯示 [離開] + [開始]
-        # 計算兩顆按鈕的總寬度來置中
         total_center_width = btn_w * 2 + gap
         center_start_x = (CAP_WIDTH - total_center_width) // 2
         
@@ -934,8 +785,6 @@ def init_four_buttons(current_scale_idx, menu_visible):
             (center_start_x + btn_w + gap, btn_y, btn_w, btn_h, SHOW_MENU_LABEL),
         ]
     else:
-        # 【情境 B：已經開始】 -> 只顯示 [離開]
-        # 計算單顆按鈕的總寬度來置中
         total_center_width = btn_w
         center_start_x = (CAP_WIDTH - total_center_width) // 2
         
@@ -943,16 +792,13 @@ def init_four_buttons(current_scale_idx, menu_visible):
             (center_start_x, btn_y, btn_w, btn_h, EXIT_LABEL),
         ]
     
-    # 4. 組合：[左] + [中間(動態)] + [右]
     zones = swap_bottom_to_instruments(BASE_ZONES, current_scale_idx)
     zones = ensure_toggle_label(zones, menu_visible)
     return zones
 
-# --- 攝影機選擇函式 ---
 def select_camera():
     print("正在偵測可用的攝影機...")
     available_cameras = []
-    # 掃描 0-4
     for i in range(5):
         cap_test = cv2.VideoCapture(i)
         if cap_test.isOpened():
@@ -963,12 +809,9 @@ def select_camera():
         print("錯誤：找不到任何可用的攝影機。")
         return None
     
-    # --- 自動選擇邏輯 ---
-    # 策略：優先嘗試列表中的「最後一個」攝影機 (通常外接鏡頭 index 較大)
     suggested_idx = available_cameras[-1]
     print(f"自動嘗試連接攝影機 {suggested_idx} (通常為外接鏡頭)...")
 
-    # 進行快速測試：嘗試開啟並讀取一幀畫面
     cap = cv2.VideoCapture(suggested_idx)
     is_working = False
     if cap.isOpened():
@@ -984,7 +827,6 @@ def select_camera():
     else:
         print(f"自動連接攝影機 {suggested_idx} 失敗，轉為手動選擇模式。")
 
-    # --- 手動選擇備案 ---
     print("請選擇要使用的攝影機：")
     for cam_idx in available_cameras:
         print(f"  - 輸入 {cam_idx} 選擇攝影機 {cam_idx}")
@@ -999,19 +841,15 @@ def select_camera():
         except ValueError:
             print("請輸入數字。")
 
-# --- 程式主體 ---
 def main():
     global COMMAND_ZONES, INSTRUMENT_MASTER_GAIN
 
     ensure_beep_wave_loaded()
-    # --- 新增：攝影機選擇 ---
     camera_index = select_camera()
     if camera_index is None:
         return
 
-    # --- 修改：耐心等待攝影機啟動 ---
     print(f"正在啟動攝影機 {camera_index}，這可能需要幾秒鐘...")
-    # 不填第二參數，讓openCV自己選擇後端去打API（Windows與MacOS適用後端不同）
     cap = cv2.VideoCapture(camera_index)
     
     start_time = time.time()
@@ -1022,7 +860,6 @@ def main():
             if ret:
                 camera_ready = True
                 break
-        # 短暫延遲，避免 CPU 占用過高
         time.sleep(0.1)
 
     if not camera_ready:
@@ -1035,7 +872,6 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAP_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAP_HEIGHT)
 
-    # 介面狀態：預設隱藏上方五個功能區塊
     menu_visible = False
     current_scale_idx, current_preset = get_preset_by_key("piano_chinese")
     load_active_preset_sounds(current_preset)
@@ -1043,10 +879,7 @@ def main():
     current_top_names = current_preset["names"]
     top_zone_cache = build_top_zones(current_top_names)
 
-    # 呼叫函式來初始化 COMMAND_ZONES
     COMMAND_ZONES = init_four_buttons(current_scale_idx, menu_visible)
-    
-    # (接下來的 zone_thresholds 等維持原樣)
     zone_thresholds = build_zone_thresholds(COMMAND_ZONES)
     window_origin = {}
     previous_hand_points = {}
@@ -1067,13 +900,11 @@ def main():
     relax_candidate_start = None
     ambient_warning_shown = ambient_warning is not None
     
-    # 初始化 MediaPipe Hands
     hands = mp_hands.Hands(
         model_complexity=1,
         min_detection_confidence=0.7,
         min_tracking_confidence=0.7)
 
-    # 階段一：等待使用者按下按鍵
     window_name = "Hand Gesture Interface"
     cv2.namedWindow(window_name)
 
@@ -1083,7 +914,6 @@ def main():
         
         frame = cv2.flip(frame, 1)
         
-        # 顯示操作提示
         cv2.putText(frame, "Press 's' to start calibration", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
         cv2.putText(frame, "Press 'q' to quit", (50, 90), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
         cv2.putText(frame, "Low motion will enter Relax mode (ambient)", (50, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 200), 2)
@@ -1107,14 +937,12 @@ def main():
 
     COMMAND_ZONES = swap_bottom_to_instruments(COMMAND_ZONES, current_scale_idx)
     
-    # 確保 toggle 文字正確 (例如 "開始" vs "收起功能")
     COMMAND_ZONES = ensure_toggle_label(COMMAND_ZONES, menu_visible)
 
     zone_accumulators = [0] * len(COMMAND_ZONES)
     feedback_timers = [0] * len(COMMAND_ZONES)
-    zone_thresholds = build_zone_thresholds(COMMAND_ZONES) # 記得重新建立閾值
+    zone_thresholds = build_zone_thresholds(COMMAND_ZONES)
 
-    # 階段四：主偵測迴圈
     while True:
         zones_dirty = False
         ret, frame = cap.read()
@@ -1122,13 +950,10 @@ def main():
 
         frame = cv2.flip(frame, 1)
 
-        # 將 BGR 圖像轉換為 RGB
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        # 處理圖像以偵測手部
         results = hands.process(frame_rgb)
 
-        # 計算每隻手的速度
         hand_data = []
         h_frame, w_frame, _ = frame.shape
         current_time = time.time()
@@ -1161,7 +986,6 @@ def main():
         visual_state = update_visual_buffer(visual_state, motion_metrics, dt)
         last_effect_time = now
 
-        # 繪製手部關鍵點
         if results.multi_hand_landmarks:
             for hand_landmarks in results.multi_hand_landmarks:
                 mp_drawing.draw_landmarks(
@@ -1171,20 +995,18 @@ def main():
                     mp_drawing_styles.get_default_hand_landmarks_style(),
                     mp_drawing_styles.get_default_hand_connections_style())
 
-        # 自動補齊 feedback_timers 長度，防止 IndexError
         if len(feedback_timers) < len(COMMAND_ZONES):
             feedback_timers.extend([0] * (len(COMMAND_ZONES) - len(feedback_timers)))
 
-        # 處理視覺回饋狀態，用於動態著色
         active_feedback = [False] * len(feedback_timers)
         
         for i, start_time in enumerate(feedback_timers):
             if start_time > 0:
                 elapsed_time = time.time() - start_time
-                if elapsed_time < 5.0:  # 持續 5 秒
+                if elapsed_time < 5.0:
                     active_feedback[i] = True
                 else:
-                    feedback_timers[i] = 0 # 重置計時器
+                    feedback_timers[i] = 0
 
         menu_toggle_requested = False
         instrument_swap_requested = False
@@ -1198,7 +1020,6 @@ def main():
         zone_velocities = [0.0] * len(COMMAND_ZONES)
 
         for i, (x, y, w, h, name) in enumerate(COMMAND_ZONES):
-            # 檢查是否有手部關鍵點在當前區域內
             hand_in_zone = False
             zone_velocity = 0.0
             last_hand_x = None
@@ -1225,19 +1046,15 @@ def main():
                 
                 current_prev_label, current_next_label = get_nav_labels(current_scale_idx)
 
-                # 1. 結束程式
                 if name == EXIT_LABEL:
                     exit_requested = True
                 
-                # 2. 選單顯示/隱藏
                 elif name in (SHOW_MENU_LABEL, HIDE_MENU_LABEL):
                     menu_toggle_requested = True
                     toggle_beep_requested = True
 
-                # 3. 上一個樂器 (切換)
                 elif name == current_prev_label:
                     current_scale_idx = (current_scale_idx - 1 + len(SCALE_PRESETS)) % len(SCALE_PRESETS)
-                    # 重建介面
                     (current_top_names, top_zone_cache, COMMAND_ZONES, 
                      zone_accumulators, feedback_timers, zone_thresholds) = rebuild_top_for_preset(
                         current_scale_idx, menu_visible, COMMAND_ZONES
@@ -1246,10 +1063,8 @@ def main():
                     COMMAND_ZONES = ensure_toggle_label(COMMAND_ZONES, menu_visible)
                     zones_dirty = True
 
-                # 4. 下一個樂器 (切換)
                 elif name == current_next_label:
                     current_scale_idx = (current_scale_idx + 1) % len(SCALE_PRESETS)
-                    # 重建介面
                     (current_top_names, top_zone_cache, COMMAND_ZONES, 
                      zone_accumulators, feedback_timers, zone_thresholds) = rebuild_top_for_preset(
                         current_scale_idx, menu_visible, COMMAND_ZONES
@@ -1258,10 +1073,8 @@ def main():
                     COMMAND_ZONES = ensure_toggle_label(COMMAND_ZONES, menu_visible)
                     zones_dirty = True
 
-                # 5. 播放音效 (上方琴鍵)
                 elif name in TOP_ACTION_ALL:
                     hx = last_hand_x if last_hand_x is not None else x + w / 2
-                    # 呼叫新的播放函式 (移除了 timbre 參數)
                     play_action_sound(name, zone_velocity, hx)
                     print(f"{name} 觸發（播放音效）。")
 
@@ -1318,38 +1131,26 @@ def main():
             play_beep_sound()
 
         if menu_toggle_requested:
-            # 切換狀態
             menu_visible = not menu_visible
             
             if menu_visible:
-                # 【模式 A：已開始 (演奏模式)】
-                # 目標：底部顯示 [ < 上一個 ]   [ 結束程式 ]   [ 下一個 > ]
-                
-                # 1. 計算中間「結束按鈕」的置中位置
                 btn_w = 220
                 btn_h = 100
                 margin_bottom = 30
-                
-                # 讓結束按鈕絕對置中
                 center_x = (CAP_WIDTH - btn_w) // 2
                 btn_y = CAP_HEIGHT - btn_h - margin_bottom
                 center_exit_btn = (center_x, btn_y, btn_w, btn_h, EXIT_LABEL)
 
-                # 2. 準備左右按鈕 (使用全域變數的座標)
                 prev_label, next_label = get_nav_labels(current_scale_idx)
                 nav_left = (*NAV_BTN_LEFT_RECT, prev_label)
                 nav_right = (*NAV_BTN_RIGHT_RECT, next_label)
 
-                # 3. 組合所有按鈕：左 + 中(結束) + 右 + 上方樂器
                 COMMAND_ZONES = [nav_left, center_exit_btn, nav_right] + top_zone_cache
                 
             else:
-                # 【模式 B：已結束 (主選單模式)】
                 COMMAND_ZONES = init_four_buttons(current_scale_idx, menu_visible)
-                # 加上上方樂器顯示
                 COMMAND_ZONES += top_zone_cache
             
-            # 4. 重置相關狀態
             zone_accumulators = [0] * len(COMMAND_ZONES)
             feedback_timers = [0] * len(COMMAND_ZONES)
             zone_thresholds = build_zone_thresholds(COMMAND_ZONES)
@@ -1404,7 +1205,6 @@ def main():
 
         zone_colors = []
         for i, zone in enumerate(COMMAND_ZONES):
-            # 1. 安全取得速度：如果 zone_velocities 長度跟不上新的 zones，就預設為 0.0
             v = zone_velocities[i] if i < len(zone_velocities) else 0.0
             
             name = zone[4]
@@ -1418,7 +1218,6 @@ def main():
             
             zone_colors.append(velocity_to_color(v, base))
 
-        # 繪圖
         frame = draw_ui(frame, COMMAND_ZONES, zone_accumulators, zone_thresholds, zone_colors=zone_colors)
 
         overlay = render_visual_overlay(visual_state)
@@ -1460,8 +1259,6 @@ def main():
             )
 
         cv2.imshow("Hand Gesture Interface", frame)
-        # cv2.imshow("Foreground Mask", fg_mask) # 移除此行
-
         if cv2.waitKey(1) & 0xFF == ord('q'): break
 
     cap.release()
