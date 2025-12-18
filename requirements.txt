@@ -1,5 +1,5 @@
-opencv-python
-numpy
-Pillow
-mediapipe
-simpleaudio
+opencv-python>=4.9.0.80,<5
+numpy>=1.26,<2
+Pillow>=10.0.0
+mediapipe>=0.10.11,<0.11
+simpleaudio>=1.0.4
